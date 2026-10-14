@@ -30,7 +30,7 @@ button:disabled{opacity:.6;cursor:default}
 #main{position:relative;min-width:0;overflow:auto}
 #view{width:100%;height:100%;border:0;display:block;background:var(--bg)}
 #auth{display:flex;justify-content:center;padding:48px 16px}
-#auth[hidden],#view[hidden],.box input[hidden]{display:none}
+#auth[hidden],#view[hidden],.box input[hidden],.tabs[hidden]{display:none}
 .box{width:100%;max-width:360px;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:20px}
 .box h1{font-size:18px;margin:0 0 4px}
 .sub{color:var(--mute);font-size:12px;margin:0 0 12px}
@@ -63,6 +63,7 @@ button:disabled{opacity:.6;cursor:default}
       <div class="tabs" role="tablist">
         <button type="button" role="tab" data-mode="login">로그인</button>
         <button type="button" role="tab" data-mode="signup">회원가입</button>
+        <button type="button" role="tab" data-mode="forgot">비밀번호 찾기</button>
       </div>
       <form id="aform">
         <input type="email" id="aem" placeholder="이메일" autocomplete="username" required>
@@ -115,60 +116,100 @@ function renderAcct(){
   if(uid)$("out").onclick=()=>RDB.signOut();
 }
 
-/* ---------- 로그인 / 회원가입 화면 ---------- */
-let mode="login";
+/* ---------- 로그인 / 회원가입 / 비밀번호 찾기 화면 ---------- */
+// login: 로그인, signup: 회원가입, forgot: 재설정 메일 보내기, newpw: 메일 링크로 들어와 새 비밀번호 정하기
+const MODES={
+  login: {title:"로그인",     btn:"로그인",              em:1,pw:"비밀번호"},
+  signup:{title:"회원가입",   btn:"가입하기",            em:1,pw:"비밀번호 (6자 이상)",pw2:1},
+  forgot:{title:"비밀번호 찾기",btn:"재설정 메일 보내기", em:1},
+  newpw: {title:"새 비밀번호 설정",btn:"비밀번호 변경",  pw:"새 비밀번호 (6자 이상)",pw2:1}
+};
+let mode="login",recovering=false;
 function setMode(m){
-  mode=m;const su=m==="signup";
-  $("atitle").textContent=su?"회원가입":"로그인";
+  mode=m;const c=MODES[m];
+  $("atitle").textContent=c.title;
+  document.querySelector(".tabs").hidden=m==="newpw";
   document.querySelectorAll(".tabs button").forEach(b=>b.setAttribute("aria-selected",b.dataset.mode===m));
-  $("apw2").hidden=!su;$("apw2").required=su;
-  $("apw").placeholder=su?"비밀번호 (6자 이상)":"비밀번호";
-  $("apw").autocomplete=su?"new-password":"current-password";
-  $("asub").textContent=su?"가입하기":"로그인";
+  $("aem").hidden=!c.em;$("aem").required=!!c.em;
+  $("apw").hidden=!c.pw;$("apw").required=!!c.pw;$("apw").placeholder=c.pw||"";
+  $("apw").autocomplete=m==="login"?"current-password":"new-password";
+  $("apw2").hidden=!c.pw2;$("apw2").required=!!c.pw2;
+  $("asub").textContent=c.btn;
   $("aerr").textContent="";$("aerr").className="err";
 }
 document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
-const KO={"Invalid login credentials":"이메일 또는 비밀번호가 틀려요.","Email not confirmed":"메일 인증이 아직 안 됐어요. 받은 메일의 링크를 먼저 눌러 주세요.","User already registered":"이미 가입된 이메일이에요. 로그인해 주세요.","Signups not allowed for this instance":"지금은 회원가입이 막혀 있어요. (Supabase 설정에서 허용 필요)"};
-const koErr=x=>KO[x.message]||(/password/i.test(x.message)&&/least|short|weak/i.test(x.message)?"비밀번호가 너무 짧거나 쉬워요. 더 길게 만들어 주세요.":/rate limit/i.test(x.message)?"요청이 너무 많아요. 잠시 후 다시 시도해 주세요.":x.message);
+const KO={
+  "Invalid login credentials":"이메일 또는 비밀번호가 틀려요.",
+  "Email not confirmed":"메일 인증이 아직 안 됐어요. 받은 메일의 링크를 먼저 눌러 주세요.",
+  "User already registered":"이미 가입된 이메일이에요. 로그인해 주세요.",
+  "Signups not allowed for this instance":"지금은 회원가입이 막혀 있어요. (Supabase 설정에서 허용 필요)",
+  "New password should be different from the old password.":"이전과 다른 비밀번호로 정해 주세요.",
+  "Auth session missing!":"링크가 만료됐어요. 비밀번호 찾기를 다시 해 주세요."
+};
+const koErr=x=>KO[x.message]||(/password/i.test(x.message)&&/least|short|weak/i.test(x.message)?"비밀번호가 너무 짧거나 쉬워요. 더 길게 만들어 주세요.":/rate limit|security purposes/i.test(x.message)?"요청이 너무 많아요. 잠시 후 다시 시도해 주세요.":x.message);
+const ok=t=>{$("aerr").className="ok";$("aerr").textContent=t};
 $("aform").onsubmit=async e=>{
   e.preventDefault();
   const em=$("aem").value.trim(),pw=$("apw").value,msg=$("aerr");
   msg.className="err";msg.textContent="";
-  if(mode==="signup"&&pw!==$("apw2").value){msg.textContent="비밀번호 확인이 달라요.";return}
+  if(MODES[mode].pw2&&pw!==$("apw2").value){msg.textContent="비밀번호 확인이 달라요.";return}
   $("asub").disabled=true;
   try{
     if(mode==="login"){await RDB.signIn(em,pw);return}
+    if(mode==="forgot"){
+      await RDB.resetPassword(em);
+      ok(`${em} 로 비밀번호 재설정 메일을 보냈어요. 메일의 링크를 눌러 새 비밀번호를 정하세요. (가입된 이메일일 때만 메일이 가요)`);return}
+    if(mode==="newpw"){
+      await RDB.updatePassword(pw);
+      recovering=false;$("apw").value="";$("apw2").value="";route();
+      if(!$("view").hidden)return;
+      ok("비밀번호를 바꿨어요.");return}
     const d=await RDB.signUp(em,pw);
     if(d.session)return;   // 메일 인증이 꺼져 있으면 바로 로그인됨
     if(d.user&&d.user.identities&&!d.user.identities.length){msg.textContent=KO["User already registered"];return}
     setMode("login");$("apw").value="";$("apw2").value="";
-    msg.className="ok";msg.textContent=`${em} 로 인증 메일을 보냈어요. 메일의 링크를 누른 뒤 여기서 로그인하세요.`;
+    ok(`${em} 로 인증 메일을 보냈어요. 메일의 링크를 누른 뒤 여기서 로그인하세요.`);
   }catch(x){msg.textContent=koErr(x)}
   finally{$("asub").disabled=false}
 };
+
+// 만료되거나 이미 쓴 메일 링크로 들어오면 주소 뒤에 #error_code=... 가 붙어 옴
+let linkErr="";
+if(/error_code=/.test(location.hash)){
+  const p=new URLSearchParams(location.hash.slice(1));
+  linkErr=p.get("error_code")==="otp_expired"?"메일 링크가 만료됐거나 이미 사용됐어요. 다시 요청해 주세요.":"메일 링크를 처리하지 못했어요: "+(p.get("error_description")||p.get("error_code"));
+  history.replaceState(null,"",location.pathname+location.search);
+}
 
 /* ---------- 화면 전환 ---------- */
 function route(){
   const h=location.hash,authPage=h==="#login"||h==="#signup";
   const m=authPage?null:ready.find(x=>"#"+x.id===h)||ready[0];
   document.querySelectorAll("nav a").forEach(a=>m&&a.dataset.id===m.id?a.setAttribute("aria-current","page"):a.removeAttribute("aria-current"));
-  const name=m?m.name:h==="#signup"?"회원가입":"로그인";
+  const name=recovering?"새 비밀번호 설정":m?m.name:h==="#signup"?"회원가입":"로그인";
   $("cur").textContent=name;document.title=name+" · 판독지 스튜디오";
   document.body.classList.remove("open");
   if(uid===undefined)return;   // 로그인 상태 확인 후 다시 불림
+  const f=$("view");
+  if(recovering){   // 비밀번호 재설정 메일 링크로 들어옴: 새 비밀번호부터 정하게 함
+    $("auth").hidden=false;f.hidden=true;f.removeAttribute("src");
+    setMode("newpw");$("anote").textContent="새로 사용할 비밀번호를 입력하세요.";return}
   if(authPage&&uid){location.replace("#"+ready[0].id);return}
-  const lock=authPage||(!m.open&&!uid),f=$("view");
+  const lock=authPage||(!m.open&&!uid);
   $("auth").hidden=!lock;f.hidden=lock;
   if(lock){
     f.removeAttribute("src");   // 로그아웃하면 판독지 화면을 내림
     setMode(h==="#signup"?"signup":"login");
     $("anote").textContent=authPage?"로그인하면 판독지를 사용할 수 있어요.":`${m.name} 판독지는 로그인 후 사용할 수 있어요.`;
+    if(linkErr){$("aerr").textContent=linkErr;linkErr=""}
   }else if(f.getAttribute("src")!==m.file)f.src=m.file;
 }
 
 // SIGNED_IN 은 실제 로그인 말고도(탭 전환, 판독지 화면의 세션 복구 등) 반복해서 오므로
 // 로그인한 사용자가 실제로 바뀔 때만 화면을 갱신함 (안 그러면 새로고침이 무한 반복됨)
 if(window.RDB)RDB.sb.auth.onAuthStateChange((ev,s)=>{
+  if(ev==="PASSWORD_RECOVERY"&&!recovering){recovering=true;setTimeout(route,0)}
+  if(ev==="SIGNED_OUT")recovering=false;
   const u=s?s.user.id:null;if(u===uid)return;
   const first=uid===undefined;uid=u;email=s?s.user.email:"";
   setTimeout(()=>{
