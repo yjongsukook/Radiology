@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thyroid US 판독문 생성기 v3</title>
+<style>
+:root{--bg:#f5f6f4;--card:#fff;--ink:#1d2421;--mute:#66706b;--line:#d5dbd7;--acc:#1f6f5c;--warn:#a8452a}
+@media(prefers-color-scheme:dark){:root{--bg:#161a18;--card:#202623;--ink:#e6ebe8;--mute:#93a09a;--line:#34403b;--acc:#58b9a0;--warn:#e08a6c}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 "Pretendard","Noto Sans KR",system-ui,sans-serif}
+main{max-width:1150px;margin:0 auto;padding:16px;display:grid;grid-template-columns:1.1fr .9fr;gap:16px}
+@media(max-width:860px){main{grid-template-columns:1fr}}
+h1{font-size:18px;margin:0 0 4px}h2{font-size:14px;margin:14px 0 6px}
+.sub{color:var(--mute);font-size:12px;margin:0 0 8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:10px;margin-bottom:10px}
+summary{cursor:pointer;font-weight:600}
+.row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:4px 0}
+label{font-size:12px;color:var(--mute)}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:4px 6px;max-width:100%}
+input[type=number]{width:78px}input[type=text]{flex:1;min-width:140px}
+textarea.s{width:100%;min-height:64px;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace}
+.ck{display:inline-flex;gap:4px;align-items:center;color:var(--ink);font-size:13px}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:4px;padding:5px 10px}
+button.p{background:var(--acc);border-color:var(--acc);color:#fff}
+:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.k{font-weight:600;color:var(--acc)}.rec{color:var(--warn);font-size:12px}
+#out{width:100%;min-height:480px;font:13px/1.55 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap}
+.x{margin-left:auto;color:var(--warn)}
+.it:not([data-kind=nodule]):not([data-kind=mass]) .g-nod{display:none}
+.it:not([data-kind=cyst]) .g-cyst{display:none}
+.it:not([data-kind=ln]) .g-ln{display:none}
+.it:not([data-kind=nodule]) .g-k{display:none}
+.it[data-kind=ln] .g-reg{display:none}
+.it:not([data-kind=ln]) .g-lvl{display:none}
+.it:not([data-chg=i]):not([data-chg=d]) .g-prev{display:none}
+</style>
+</head>
+<body>
+<main>
+<section>
+  <h1>Thyroid US 판독문 생성기 v3</h1>
+  <p class="sub">클릭 입력 → K-TIRADS 자동 판정 → 판독문 출력. 환자 정보는 입력하지 마세요. 판정 규칙과 문구는 직접 검수해서 사용하세요.</p>
+
+  <details class="card" id="imp">
+    <summary>기존 판독문 불러오기 (F/U용)</summary>
+    <p class="sub">이전 report를 그대로 붙여넣고 불러오기를 누르면 병변 카드로 바뀌어요. 불러온 병변은 모두 "변화 없음"으로 시작하고, 크기를 고치면 자동으로 크기 증가/감소와 이전 크기가 채워져요.</p>
+    <textarea id="src" class="s" style="min-height:140px" placeholder="기존 report 붙여넣기"></textarea>
+    <div class="row"><button class="p" onclick="importReport()">불러오기</button><button onclick="clearSrc()">지우기</button><span id="impmsg" class="sub"></span></div>
+  </details>
+
+  <div class="card">
+    <div class="row"><label>Reason</label><select id="rsel"></select><input type="text" id="reason" value="Screening"></div>
+    <div class="row"><label>수술력</label>
+      <select id="post"><option value="">없음</option><option value="T">S/P Total thyroidectomy</option><option value="R">S/P Right lobectomy</option><option value="L">S/P Left lobectomy</option></select>
+      <label class="ck"><input type="checkbox" id="norec" checked> recurrence 소견 없음 문구</label></div>
+    <div class="row"><label>Parenchyma</label>
+      <select id="par"><option value="">언급 안 함</option><option>Diffuse parenchymal disease</option><option>R/O diffuse parenchymal disease</option></select></div>
+    <div class="row"><label>Neck 이상 없음</label>
+      <select id="neck"><option value="양측">양측</option><option value="우측">우측</option><option value="좌측">좌측</option><option value="">(문구 제외)</option></select></div>
+    <div class="row">
+      <label class="ck"><input type="checkbox" id="showk" checked> K-TIRADS 표기</label>
+      <label class="ck"><input type="checkbox" id="showreg"> Conclusion에 위치 상세 표기</label></div>
+    <div class="row"><label>Comment</label><input type="text" id="comment" placeholder="선택"></div>
+  </div>
+
+  <h2>병변 (병변이 없으면 정상 양식으로 출력)</h2><div id="its"></div>
+  <button onclick="addIt()">+ 병변 추가</button>
+
+  <details class="card" id="xtra" style="margin-top:12px">
+    <summary>기타 줄 (불러오기에서 해석하지 못한 줄, 그대로 출력)</summary>
+    <label>Findings</label><textarea id="extraF" class="s"></textarea>
+    <label>Conclusion (번호는 자동)</label><textarea id="extraC" class="s"></textarea>
+    <label>Rec / 기타 (맨 끝에 그대로)</label><textarea id="tail" class="s"></textarea>
+  </details>
+</section>
+<section>
+  <h2 style="margin-top:0">Report</h2>
+  <textarea id="out" spellcheck="false"></textarea>
+  <div class="row"><button class="p" onclick="copyOut()">복사</button><span id="msg" class="sub"></span></div>
+</section>
+</main>
+<datalist id="regs"><option>upper pole</option><option>mid portion</option><option>lower pole</option><option>lower portion</option><option>mid to lower portion</option><option>upper pole posterior</option><option>paraisthmic area</option><option>retrotracheal area</option><option>Op. bed</option></datalist>
+<script>
+const $=id=>document.getElementById(id);
+const REASONS=[["Screening",""],["F/U for US abnormality.",""],["Outside US abnormality.",""],["Abnormal screening US.",""],["Screening, hyperparathyroidism",""],["PET-CT detected thyroid abnormality, a patient with hypercalcemia",""],["Postop., S/P Total thyroidectomy.","T"],["Post op., S/P Total thyroidectomy for Papillary carcinoma.","T"],["S/P Right lobectomy for malignancy.","R"],["S/P Left lobectomy for malignancy.","L"]];
+$("rsel").innerHTML=REASONS.map((r,i)=>`<option value="${i}">${r[0]}</option>`).join("")+`<option value="x">직접 입력</option>`;
+$("rsel").onchange=()=>{const r=REASONS[$("rsel").value];if(r){$("reason").value=r[0];$("post").value=r[1]}upd()};
+const CH={s:["",""],u:["변화 없음","No change of "],i:["크기 증가함","Interval increase in size of "],d:["크기 감소함","Interval decrease in size of "],n:["새로 발견됨","New "]};
+const opt=a=>a.map(v=>Array.isArray(v)?`<option value="${v[0]}">${v[1]}</option>`:`<option>${v}</option>`).join("");
+const LVLS=["VI","V","IV","III","II"];
+
+function addIt(quiet){
+  const d=document.createElement("div");d.className="card it";d.dataset.kind="nodule";d.dataset.chg="s";
+  d.innerHTML=`<div class="row"><select data-k="kind">${opt([["nodule","Nodule"],["mass","Mass (extrathyroidal 등)"],["spongiform","Spongiform"],["cyst","Cyst"],["ln","Lymph node"]])}</select>
+  <select data-k="side">${opt(["Right","Left","Both","Isthmus"])}</select>
+  <input type="text" class="g-reg" data-k="reg" list="regs" placeholder="위치 (예: mid portion)" style="flex:0 1 170px">
+  <select class="g-lvl" data-k="lvl">${LVLS.map(l=>`<option value="${l}">level ${l}</option>`).join("")}</select>
+  <input type="number" step="0.1" min="0" data-k="size" placeholder="cm"><label>cm</label>
+  <select data-k="chg">${opt([["s","보임 (비교 없음)"],["u","변화 없음"],["i","크기 증가"],["d","크기 감소"],["n","새로 발견"]])}</select>
+  <label class="g-prev">이전</label><input type="number" step="0.1" min="0" data-k="prev" class="g-prev" placeholder="cm" title="이전 크기"><label class="g-prev">cm</label>
+  <button class="x" onclick="this.closest('.card').remove();upd()">삭제</button></div>
+  <div class="row g-cyst"><select data-k="cyst">${opt(["cyst","tiny cyst","degenerating cyst","colloid cyst","benign cystic mass","several small cysts","multiple tiny colloid cysts"])}</select></div>
+  <div class="row g-nod"><select data-k="comp">${opt(["solid","partially cystic"])}</select>
+  <select data-k="echo">${opt(["hypoechoic","marked hypoechoic","isoechoic","hyperechoic","iso to hypoechoic",["","(echo 미기재)"]])}</select>
+  <select data-k="mar">${opt(["well-defined","ill-defined"])}</select></div>
+  <div class="row g-nod"><label class="ck"><input type="checkbox" data-k="micro">microcalcification</label>
+  <label class="ck"><input type="checkbox" data-k="macro">calcified</label>
+  <label class="ck"><input type="checkbox" data-k="np">nonparallel</label>
+  <label class="ck"><input type="checkbox" data-k="spic">spiculated/microlobulated</label></div>
+  <div class="row g-ln"><label>판단</label><select data-k="lnlab">${opt(["indeterminate","suspicious","benign-appearing","small indeterminate"])}</select></div>
+  <div class="row g-k"><label>Conclusion 표현</label><select data-k="lab">${opt([["auto","자동 (K-TIRADS)"],["benign","benign"],["low suspicious","low suspicious"],["intermediate suspicious","intermediate suspicious"],["high suspicious","high suspicious"]])}</select>
+  <label class="ck"><input type="checkbox" data-k="fna">FNA-proven benign</label>
+  <span class="k" data-o="cat"></span><span class="rec" data-o="rec"></span></div>
+  <div class="row"><input type="text" data-k="cm" placeholder="Findings 추가 문구">
+  <input type="text" data-k="ro" placeholder="R/O · DDx (여러 개는 ; 로 구분)">
+  <input type="text" data-k="rec" placeholder="Rec (예: FNA with washing PTH)"></div>
+  <div class="row"><input type="text" data-k="conc" placeholder="Conclusion 문장 직접 입력 (비우면 자동 생성)"></div>`;
+  $("its").appendChild(d);if(!quiet)upd();
+}
+function val(c){const o={};c.querySelectorAll("[data-k]").forEach(e=>o[e.dataset.k]=e.type==="checkbox"?e.checked:e.value);return o}
+function setVal(c,k,v){const e=c.querySelector(`[data-k="${k}"]`);if(!e||v===undefined)return;
+  if(e.type==="checkbox")e.checked=!!v;
+  else if(e.tagName==="SELECT"){if([...e.options].some(o=>o.value===String(v)))e.value=String(v)}
+  else e.value=v}
+
+// K-TIRADS (KSThR 기준) — 최신 가이드라인과 반드시 대조 검수
+function kt(v){const sus=v.micro||v.np||v.spic,hypo=/hypoechoic/.test(v.echo)&&v.echo!=="iso to hypoechoic";
+  if(v.comp==="solid"&&hypo)return sus?5:4;return sus?4:3}
+function fnaHint(k,s){
+  if(k<=2)return "FNA 불필요 (benign)";
+  if(!s)return "크기 입력 필요";
+  const t={5:[1,0.5],4:[1.5,1],3:[2,null]}[k];
+  if(s>t[0])return "FNA 권고 (>"+t[0]+"cm)";
+  if(t[1]!==null&&s>=t[1])return "선택적 FNA / 추적";
+  return "추적 관찰";
+}
+
+function build(v){
+  const s=parseFloat(v.size)||0,p=parseFloat(v.prev)||0,sz=s?s+"cm":"";
+  const chd=(v.chg==="i"||v.chg==="d")&&p>0&&s>0;
+  const sideK=v.side==="Both"?"양측":v.side;
+  let k=0,parts,con;
+  const feat=[v.mar==="ill-defined"&&"ill-defined",v.comp!=="solid"&&v.comp,v.echo,v.micro&&"microcalcified",v.macro&&"calcified",v.np&&"nonparallel",v.spic&&"spiculated"];
+  if(v.kind==="nodule"){k=v.fna?2:kt(v);
+    parts=[...feat,"nodule"];
+    const lab=v.fna?"FNA-proven benign":v.lab!=="auto"?v.lab:{5:"high suspicious",4:"intermediate suspicious",3:"low suspicious"}[k];
+    con=[lab,"nodule"];
+  }else if(v.kind==="mass"){parts=[...feat,"mass"];con=[v.echo,"mass"]}
+  else if(v.kind==="spongiform"){k=2;parts=con=["benign spongiform nodule"]}
+  else if(v.kind==="cyst"){k=2;parts=con=[v.cyst]}
+  else{parts=["enlarged lymph node"];con=[v.lnlab,"lymph node"]}
+  parts=parts.filter(Boolean);con=con.filter(Boolean);
+  const lobe=v.kind!=="ln"&&/^(upper pole|mid|lower)/i.test(v.reg)&&(v.side==="Right"||v.side==="Left");
+  const reg=v.kind==="ln"?"level "+v.lvl:v.reg;
+  const loc=(sideK+(lobe?" lobe ":" ")+reg).trim();
+  const body=[sz,...parts].filter(Boolean).join(" ");
+  let f;
+  if(v.chg==="n")f=`${loc}에 ${body}이 새로 발견됨.`;
+  else if(v.chg==="s")f=`${loc}에 ${body} 보임.`;
+  else if(chd)f=`${loc}에 보이던 ${parts.join(" ")}은 ${p}cm에서 ${s}cm으로 ${CH[v.chg][0]}.`;
+  else f=`${loc}에 보이던 ${body}은 ${CH[v.chg][0]}.`;
+  if(v.cm)f+=" "+v.cm;
+  const cloc=v.kind==="ln"?v.side.toLowerCase()+" level "+v.lvl:v.side.toLowerCase()+($("showreg").checked&&v.reg?" "+v.reg:"");
+  const cc=chd?con:[sz,...con].filter(Boolean);
+  const nonSize=cc.find(x=>!/^\d/.test(x))||"";
+  const plural=/^(several|multiple)/i.test(nonSize);
+  const art=v.chg==="n"||plural?"":/^\d/.test(cc[0]||"")?"a ":/^[aeiou]/i.test(cc[0]||"")?"an ":"a ";
+  let c=CH[v.chg][1]+art+cc.join(" ")+", "+cloc+(chd?` (${p}cm -> ${s}cm)`:"")+".";
+  c=c[0].toUpperCase()+c.slice(1);
+  if(v.conc&&v.conc.trim())c=v.conc.trim();
+  if(v.ro)c+=v.ro.split(/\s*;\s*/).filter(Boolean).map(x=>"\n   -> "+x).join("");
+  return{f,c,k,s,rec:v.rec};
+}
+
+function upd(){
+  const its=[...document.querySelectorAll(".it")].map(c=>{const v=val(c);c.dataset.kind=v.kind;c.dataset.chg=v.chg;const b=build(v);
+    if(v.kind==="nodule"){c.querySelector("[data-o=cat]").textContent="K-TIRADS "+b.k;c.querySelector("[data-o=rec]").textContent=fnaHint(b.k,b.s)}return b});
+  const post=$("post").value,par=$("par").value,side={R:"Right",L:"Left"}[post];
+  const lines=id=>$(id).value.split("\n").map(s=>s.trim()).filter(Boolean);
+  const xf=lines("extraF"),xc=lines("extraC"),tail=$("tail").value.trim();
+  const normal=!its.length&&!post&&!par&&!xf.length&&!xc.length;
+  const F=[],C=[];
+  if(normal){F.push("Thyroid gland 크기 및 모양, echogenicity 정상 범위임.","양측 lobe과 neck lymph node에 특이 소견 없음.");C.push("No remarkable findings in the thyroid gland.")}
+  else{
+    if(par)F.push(/^R\/O/.test(par)?"Thyroid gland에 diffuse parenchymal echopattern change가 보여 diffuse parenchymal disease가 의심됨.":"Thyroid gland에 diffuse parenchymal echopattern change가 보임.");
+    if(post&&$("norec").checked)F.push(post==="T"?"Operation bed에 recurrence를 의심할만한 soft-tissue lesion 없음.":`${side} Op. bed에 local recurrence 시사하는 소견 없음.`);
+    its.forEach(b=>F.push(b.f));
+    xf.forEach(t=>F.push(t));
+    if($("neck").value)F.push((its.length||xf.length?"그 외 ":"")+$("neck").value+" neck에 abnormal lymph node 없음.");
+    if(par)C.push(par+".");
+    if(post)C.push(post==="T"?"S/P Total thyroidectomy.":`S/P ${side.toLowerCase()} lobectomy.`);
+    if(post&&$("norec").checked)C.push(post==="T"?"No evidence of tumor recurrence or lymph node metastasis.":"No evidence of local recurrence.");
+    its.forEach(b=>C.push(b.c));
+    xc.forEach(t=>C.push(t));
+  }
+  const ks=its.map(b=>b.k).filter(Boolean);
+  const K=normal?1:ks.length?Math.max(...ks):0;
+  const concl=C.length>1?C.map((t,i)=>`${i+1}. ${t}`).join("\n"):C[0]||"";
+  const recs=its.filter(b=>b.rec).map(b=>b.rec);
+  const r=recs.length===1?`\n\nRec) ${recs[0]}`:recs.length?`\n\nRecommendation :\n`+recs.map((t,i)=>`${i+1}. ${t}`).join("\n"):"";
+  $("out").value=`<THYROID US>
+
+Reason for Exam : ${$("reason").value}
+
+Findings :
+${F.join("\n")}
+====== [Conclusion] ======
+<THYROID US>
+Conclusion :
+${concl}${$("showk").checked&&K?`\n\nK-TIRADS : ${K}`:""}${r}${$("comment").value?`\n\nComment : ${$("comment").value}`:""}${tail?"\n\n"+tail:""}`;
+}
+
+/* ---------- 기존 판독문 불러오기 ---------- */
+const NOUN=/cystic mass|spongiform nodule|nodule|mass|cysts?|lymph node/i;
+const REG_RES=[["upper pole posterior",/upper\s*pole\s*posterior/i],["upper pole",/upper\s*pole/i],["mid to lower portion",/mid\s*to\s*lower\s*portion/i],["mid portion",/mid\s*portion/i],["lower pole",/lower\s*pole/i],["lower portion",/lower\s*portion/i],["paraisthmic area",/paraisthmic/i],["retrotracheal area",/retrotracheal/i]];
+const OPBED=/op(?:eration|erative)?\.?\s*bed/i;
+function sideOf(t){const m=t.match(/\b(right|left|both|isthmus)\b|(양측)|(좌측)|(우측)/i);if(!m)return"";if(m[2])return"Both";if(m[3])return"Left";if(m[4])return"Right";const s=m[1].toLowerCase();return s[0].toUpperCase()+s.slice(1)}
+function regOf(t){if(OPBED.test(t))return"Op. bed";for(const[r,re]of REG_RES)if(re.test(t))return r;return""}
+function postOf(t){return/total\s*thyroidectomy/i.test(t)?"T":/right\s*(?:hemi)?(?:thyroid)?\s*lobectomy/i.test(t)?"R":/left\s*(?:hemi)?(?:thyroid)?\s*lobectomy/i.test(t)?"L":""}
+function cystOf(d){return/multiple tiny colloid/i.test(d)?"multiple tiny colloid cysts":/several small cysts|small cysts/i.test(d)?"several small cysts":/cystic mass/i.test(d)?"benign cystic mass":/degenerating/i.test(d)?"degenerating cyst":/colloid/i.test(d)?"colloid cyst":/tiny/i.test(d)?"tiny cyst":"cyst"}
+function featOf(d){const o={};
+  const e=/marked hypoechoic/i.test(d)?"marked hypoechoic":/iso to hypoechoic/i.test(d)?"iso to hypoechoic":/hypoechoic/i.test(d)?"hypoechoic":/isoechoic/i.test(d)?"isoechoic":/hyperechoic/i.test(d)?"hyperechoic":"";
+  o.echo=e;
+  if(/ill-defined/i.test(d))o.mar="ill-defined";else if(/well-defined/i.test(d))o.mar="well-defined";
+  o.micro=/microcalcif/i.test(d);o.macro=/\bcalcified\b|\bcalcifications?\b/i.test(d);
+  o.np=/non-?parallel|taller/i.test(d);o.spic=/spiculat|microlobulat/i.test(d);
+  if(/partially cystic/i.test(d))o.comp="partially cystic";
+  return o}
+function tailOf(sent){const m=sent.match(/변화(?:는)?\s*없(?:으며|고)[,\s]+(.+)$/);return m?m[1].trim():""}
+function mk(pre,desc,size,prev){
+  const o={size,chg:"u"};
+  let side=sideOf(pre),reg=regOf(pre);
+  if(!side&&prev)side=prev.side;if(!reg&&prev)reg=prev.reg;
+  const lv=(pre.match(/level\s*(VI|IV|V|III|II)\b/i)||[])[1];
+  if(/lymph node/i.test(desc)){o.kind="ln";o.side=side||"Left";o.lvl=(lv||(prev&&prev.lvl)||"VI").toUpperCase()}
+  else if(/spongiform/i.test(desc)){o.kind="spongiform";o.side=side;o.reg=reg}
+  else if((/cystic mass/i.test(desc)||/cysts?\b/i.test(desc))&&!/nodule/i.test(desc)){o.kind="cyst";o.cyst=cystOf(desc);o.side=side;o.reg=reg}
+  else{o.kind=/mass/i.test(desc)&&!/nodule/i.test(desc)?"mass":"nodule";o.side=side;o.reg=reg;Object.assign(o,featOf(desc))}
+  return o}
+function parseLine(line,st){
+  if(/diffuse parenchymal/i.test(line)){st.par=/의심|R\/O/i.test(line)?"R/O diffuse parenchymal disease":"Diffuse parenchymal disease";return[]}
+  const toks=[...line.matchAll(/(\d+(?:\.\d+)?)\s*cm/gi)];
+  if(!toks.length){
+    let handled=false;
+    if(OPBED.test(line)&&/없/.test(line)&&/recurrence|이상\s*없|abnormal|soft-tissue/i.test(line)){st.norec=true;handled=true}
+    if(/neck/i.test(line)&&/없/.test(line)){const i=line.search(/neck/i);const sd=sideOf(line.slice(Math.max(0,i-12),i));st.neck=sd==="Left"?"좌측":sd==="Right"?"우측":"양측";handled=true}
+    if(handled)return[];
+    if(/정상\s*범위|정상\s*에코|특이\s*소견\s*없|focal lesion\s*없/i.test(line))return[];
+    if(/cysts?\b/i.test(line))return[{kind:"cyst",cyst:cystOf(line),side:sideOf(line),reg:regOf(line),chg:"u",size:""}];
+    return null;
+  }
+  const ft=line.match(/^(.*?)에\s*(?:(?:이전에\s*)?(?:보이던|보였던|언급되었던|언급된)\s*)?(.*?(?:cystic mass|nodule|mass|cysts?|lymph node))\s*(?:은|는|이|가)?\s*(\d+(?:\.\d+)?)\s*cm에서\s*(\d+(?:\.\d+)?)\s*cm(?:으로|로)/i);
+  if(ft)return[mk(ft[1],ft[2],ft[4],null)];
+  const raws=toks.map((m,i)=>{const end=m.index+m[0].length,nx=i<toks.length-1?toks[i+1].index:line.length,post=line.slice(end,nx),nm=post.match(NOUN);
+    return{size:m[1],pre:"",post,desc:nm?post.slice(0,nm.index+nm[0].length):"",rest:nm?post.slice(nm.index+nm[0].length):""}});
+  raws[0].pre=line.slice(0,toks[0].index);
+  for(let i=1;i<raws.length;i++)raws[i].pre=raws[i-1].desc?raws[i-1].rest:raws[i-1].post;
+  const n=raws.length;
+  if(n>=2&&!raws[n-1].desc&&raws[n-2].desc&&/^\s*(?:은|는|이|가)?\s*$/.test(raws[n-2].rest)){raws[n-2].size=raws[n-1].size;raws.pop()}
+  for(let i=raws.length-2;i>=0;i--)if(!raws[i].desc)raws[i].desc=raws[i+1].desc;
+  const out=[];let prev=null;
+  raws.forEach(r=>{if(!r.desc)return;prev=mk(r.pre,r.desc,r.size,prev);out.push(prev)});
+  if(!out.length)return null;
+  if(out.length===1){const ss=line.split(/(?<=\.)\s+/);const cm=[tailOf(ss[0]),...ss.slice(1)].filter(Boolean).join(" ");if(cm)out[0].cm=cm}
+  return out;
+}
+function splitReport(t){
+  const m=t.match(/={2,}\s*\[?\s*(?:Conclusion|결\s*론)\s*\]?\s*={2,}/i);
+  if(m)return[t.slice(0,m.index),t.slice(m.index+m[0].length)];
+  const n=t.search(/^\s*1\.\s/m);
+  return n>=0?[t.slice(0,n),t.slice(n)]:[t,""];
+}
+const nrm=s=>s.toLowerCase().replace(/[^a-z0-9가-힣\s.]/g," ").replace(/\./g,"").replace(/\s+/g," ").trim().replace(/^no change of /,"").replace(/^(a|an) /,"");
+function parseConclusion(txt,st,cards){
+  const XC=[],tail=[],used=new Set(),vals=cards.map(val);let last=null,inRec=false;
+  for(const raw of txt.split("\n")){
+    let t=raw.trim();if(!t)continue;
+    if(/^<.*>$/.test(t)||/^=+.*=+$/.test(t))continue;
+    t=t.replace(/^(?:conclusion|결\s*론)\s*:\s*/i,"").trim();if(!t)continue;
+    if(/^K-?TIRADS\s*:?\s*\d/i.test(t)){inRec=false;continue}
+    let m=t.match(/^Comment\s*:\s*(.*)$/i);
+    if(m){st.comment=m[1].trim();inRec=false;continue}
+    if(/^(?:Rec\)|Recommendation\s*:?)/i.test(t)){tail.push(t);inRec=true;continue}
+    if(inRec){tail.push(t);continue}
+    m=t.match(/^(?:-+>|-{2,})\s*(.*)$/);
+    if(m){if(last){const ro=last.querySelector('[data-k="ro"]');ro.value=ro.value?ro.value+" ; "+m[1]:m[1]}else XC.push(t);continue}
+    if(/^-\s/.test(t)&&/recurrence|evidence/i.test(t))continue;
+    t=t.replace(/^\d+\.\s*/,"");
+    if(/^S\/P\b/i.test(t)){const p=postOf(t);if(p&&!st.post)st.post=p;last=null;continue}
+    if(/^No (?:definite )?evidence of/i.test(t)||/^No remarkable|^Normal thyroid/i.test(t)){last=null;continue}
+    if(/parenchymal disease/i.test(t)){if(!st.par)st.par=/^R\/O/i.test(t)?"R/O diffuse parenchymal disease":"Diffuse parenchymal disease";last=null;continue}
+    const ar=t.match(/\(\s*([\d.]+)\s*cm\s*->\s*([\d.]+)\s*cm\s*\)/i);
+    const core=t.replace(/^(?:Interval\s+(?:increase|decrease)(?:\s+in\s+size)?\s+of|New)\s+/i,"").replace(/\s*\(\s*[\d.]+\s*cm\s*->\s*[\d.]+\s*cm\s*\)/i,"");
+    const sm=ar?ar[2]:(core.match(/(\d+(?:\.\d+)?)\s*cm/i)||[])[1];
+    const plural=/^(?:no change of\s+)?(?:two|three|four|a few)\b/i.test(core);
+    let ci=-1;
+    if(!plural){
+      if(sm)ci=vals.findIndex((x,i)=>!used.has(i)&&parseFloat(x.size)===parseFloat(sm));
+      else{
+        const kd=/lymph node/i.test(core)?"ln":/cyst/i.test(core)?"cyst":/spongiform/i.test(core)?"spongiform":"";
+        if(kd)ci=vals.findIndex((x,i)=>!used.has(i)&&x.kind===kd);
+        else if(/nodule|mass/i.test(core)){const sd=sideOf(core),ca=/calcified/i.test(core);
+          ci=vals.findIndex((x,i)=>!used.has(i)&&(x.kind==="nodule"||x.kind==="mass")&&(!sd||x.side===sd)&&(!ca||x.macro))}
+      }
+    }
+    if(ci>=0){
+      used.add(ci);const c=cards[ci];last=c;
+      if(/FNA-proven benign/i.test(core))setVal(c,"fna",true);
+      const lb=core.match(/\b(low|intermediate|high)\s+suspicious/i);if(lb)setVal(c,"lab",lb[1].toLowerCase()+" suspicious");
+      const gen=build(Object.assign(val(c),{chg:"u",ro:"",conc:""})).c;
+      if(!ar&&nrm(gen)!==nrm(core))setVal(c,"conc",/^No change/i.test(core)?core:"No change of "+core.replace(/^([A-Z])(?=[a-z]|\s)/,x=>x.toLowerCase()));
+    }else{XC.push(t);last=null}
+  }
+  return{XC,tail};
+}
+function newCard(o){addIt(true);const c=$("its").lastElementChild;Object.keys(o).forEach(k=>setVal(c,k,o[k]));c.dataset.orig=o.size||"";return c}
+function importReport(){
+  const t=$("src").value.trim();
+  if(!t){$("impmsg").textContent="붙여넣은 내용이 없어요";return}
+  if(document.querySelector(".it")&&!confirm("현재 입력한 병변을 지우고 불러올까요?"))return;
+  const st={par:"",post:"",norec:false,neck:"양측",comment:"",reason:""};
+  const rm=t.match(/Reason\s*for\s*exam\s*:\s*([^\n]*)/i);
+  if(rm){st.reason=rm[1].trim();st.post=postOf(st.reason)}
+  const[fp,cp]=splitReport(t);
+  const fl=fp.split("\n").map(s=>s.trim()).filter(s=>s&&!/^<.*>$/.test(s)&&!/^Reason\s*for\s*exam/i.test(s)).map(s=>s.replace(/^findings?\s*:\s*/i,"").trim()).filter(Boolean);
+  const L=[],X=[];
+  fl.forEach(line=>{const r=parseLine(line,st);if(r===null)X.push(line);else L.push(...r)});
+  $("its").innerHTML="";
+  const cards=L.map(newCard);
+  const{XC,tail}=parseConclusion(cp,st,cards);
+  const nk=s=>s.toLowerCase().replace(/[.\s]+$/,"").replace(/\s+/g," ");
+  if(st.reason){const ri=REASONS.findIndex(r=>nk(r[0])===nk(st.reason));$("reason").value=st.reason;$("rsel").value=ri>=0?String(ri):"x"}
+  $("post").value=st.post;$("norec").checked=st.norec;$("par").value=st.par;$("neck").value=st.neck;$("comment").value=st.comment;
+  $("extraF").value=X.join("\n");$("extraC").value=XC.join("\n");$("tail").value=tail.join("\n");
+  if(X.length||XC.length||tail.length)$("xtra").open=true;
+  $("impmsg").textContent=`병변 ${cards.length}개, 기타 Findings ${X.length}줄, 기타 Conclusion ${XC.length}줄을 불러왔어요. 결과를 꼭 확인하세요.`;
+  upd();
+}
+
+function clearSrc(){$("src").value="";$("impmsg").textContent="";$("src").focus()}
+function onSize(e){
+  const el=e.target;if(!el.matches||!el.matches('[data-k="size"]'))return;
+  const c=el.closest(".it"),orig=parseFloat(c.dataset.orig);if(!orig)return;
+  const ch=c.querySelector('[data-k="chg"]');if(!["u","i","d"].includes(ch.value))return;
+  const cur=parseFloat(el.value),pv=c.querySelector('[data-k="prev"]');
+  if(!cur||cur===orig){ch.value="u";pv.value=""}else{ch.value=cur>orig?"i":"d";pv.value=orig}
+}
+function onChg(e){
+  const el=e.target;if(!el.matches||!el.matches('[data-k="chg"]'))return;
+  const c=el.closest(".it"),orig=c.dataset.orig,pv=c.querySelector('[data-k="prev"]');
+  if((el.value==="i"||el.value==="d")&&!pv.value&&orig)pv.value=orig;
+}
+function copyOut(){
+  const t=$("out");t.select();
+  (navigator.clipboard?navigator.clipboard.writeText(t.value):Promise.reject()).catch(()=>document.execCommand("copy"));
+  $("msg").textContent="복사됨";setTimeout(()=>$("msg").textContent="",1500);
+}
+document.addEventListener("input",e=>{onSize(e);upd()});
+document.addEventListener("change",e=>{onChg(e);upd()});
+upd();
+</script>
+</body>
+</html>
