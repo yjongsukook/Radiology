@@ -20,6 +20,18 @@
 | CT | 복부 CT | 준비 중 |
 | MRI | MRI | 준비 중 |
 
+## 내 저장소 (Supabase)
+
+로그인하면 판독지마다 **템플릿, 판독문 기록, 자주 쓰는 문구**를 저장해서 어느 컴퓨터에서든 쓸 수 있습니다.
+연결 정보는 `lib/db.js`에 있습니다.
+
+처음 한 번만 설정합니다.
+1. Supabase 대시보드 > **SQL Editor**에서 `supabase/schema.sql` 내용을 붙여넣고 Run.
+2. **Authentication > Users > Add user**로 내 계정(이메일, 비밀번호)을 만들고 "Auto Confirm User"를 체크.
+3. **Authentication > Sign In / Providers**에서 "Allow new users to sign up"을 끕니다. (다른 사람이 가입하지 못하게)
+
+> 저장소에도 환자 식별 정보(이름, 등록번호, 생년월일 등)는 절대 저장하지 마세요.
+
 ## 새 판독지 추가하기
 
 1. 판독지 프로그램을 HTML 파일 하나로 만들어 `modules/` 폴더에 넣습니다.
