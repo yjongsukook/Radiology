@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>방명록</title>
+<style>
+:root{--bg:#f5f6f4;--card:#fff;--ink:#1d2421;--mute:#66706b;--line:#d5dbd7;--acc:#1f6f5c;--warn:#a8452a}
+@media(prefers-color-scheme:dark){:root{--bg:#161a18;--card:#202623;--ink:#e6ebe8;--mute:#93a09a;--line:#34403b;--acc:#58b9a0;--warn:#e08a6c}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 "Pretendard","Noto Sans KR",system-ui,sans-serif}
+main{max-width:720px;margin:0 auto;padding:16px}
+h1{font-size:18px;margin:0 0 4px}
+.sub{color:var(--mute);font-size:12px;margin:0 0 8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:10px;margin-bottom:10px}
+.row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:4px 0}
+input,textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:4px 6px;max-width:100%}
+input{width:180px}
+textarea{width:100%;min-height:80px;resize:vertical}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:4px;padding:5px 10px}
+button.p{background:var(--acc);border-color:var(--acc);color:#fff}
+button:disabled{opacity:.6;cursor:default}
+:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.msg{white-space:pre-wrap;word-break:break-word;margin-top:4px}
+.who{font-weight:600}
+.x{margin-left:auto;color:var(--warn);padding:2px 8px;font-size:12px}
+#note{min-height:1.5em}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js"></script>
+<script src="../lib/db.js"></script>
+</head>
+<body>
+<main>
+  <h1>방명록</h1>
+  <p class="sub">자유롭게 한마디 남겨 주세요. 누구나 볼 수 있으니 환자 정보나 개인정보는 쓰지 마세요.</p>
+
+  <form class="card" id="form">
+    <div class="row"><input type="text" id="name" placeholder="이름 (닉네임)" maxlength="30" required></div>
+    <textarea id="text" placeholder="남길 말 (최대 1000자)" maxlength="1000" required></textarea>
+    <div class="row"><button class="p" id="send">남기기</button><span class="sub" id="note"></span></div>
+  </form>
+
+  <div id="list"><p class="sub">불러오는 중…</p></div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+const errText=e=>/guestbook/.test(e.message)&&/exist|schema cache/i.test(e.message)?"방명록 테이블이 아직 없어요. supabase/guestbook.sql 을 먼저 실행하세요.":"오류: "+e.message;
+const GB=window.RDB&&RDB.guestbook;
+let admin=false;
+
+async function load(){
+  if(!GB){$("list").innerHTML=`<p class="sub">저장소에 연결할 수 없어요 (인터넷 확인).</p>`;return}
+  let rows;try{rows=await GB.list()}catch(e){$("list").innerHTML=`<p class="sub">${esc(errText(e))}</p>`;return}
+  $("list").innerHTML=rows.length?rows.map(r=>`<div class="card"><div class="row"><span class="who">${esc(r.name)}</span>
+    <span class="sub" style="margin:0">${new Date(r.created_at).toLocaleString("ko-KR",{dateStyle:"short",timeStyle:"short"})}</span>
+    ${admin?`<button class="x" onclick="del('${r.id}')">삭제</button>`:""}</div><div class="msg">${esc(r.message)}</div></div>`).join("")
+    :`<p class="sub">아직 남긴 글이 없어요. 첫 글을 남겨 주세요.</p>`;
+}
+$("form").onsubmit=async e=>{
+  e.preventDefault();
+  const name=$("name").value.trim(),msg=$("text").value.trim();
+  if(!name||!msg)return;
+  $("send").disabled=true;$("note").textContent="";
+  try{await GB.add(name,msg);$("text").value="";$("note").textContent="남겼어요. 고마워요!";load()}
+  catch(x){$("note").textContent=errText(x)}
+  finally{$("send").disabled=false}
+};
+async function del(id){
+  if(!confirm("이 글을 삭제할까요? 되돌릴 수 없어요."))return;
+  try{await GB.remove(id)}catch(e){alert(errText(e));return}
+  load();
+}
+(async()=>{if(window.RDB)admin=!!await RDB.user();load()})();
+</script>
+</body>
+</html>

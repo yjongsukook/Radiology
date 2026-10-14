@@ -57,7 +57,9 @@ const MODULES=[
   {grp:"CT",items:[
     {id:"abd-ct",name:"복부 CT"}]},
   {grp:"MRI",items:[
-    {id:"mri",name:"MRI"}]}
+    {id:"mri",name:"MRI"}]},
+  {grp:"Community",items:[
+    {id:"guestbook",name:"방명록",file:"modules/guestbook.html"}]}
 ];
 const all=MODULES.flatMap(g=>g.items),ready=all.filter(m=>m.file);
 document.getElementById("nav").innerHTML=
