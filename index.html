@@ -79,8 +79,13 @@ async function renderAcct(){
   else document.getElementById("login").onsubmit=async e=>{e.preventDefault();
     try{await RDB.signIn(em.value.trim(),pw.value)}catch(x){err.textContent=x.message==="Invalid login credentials"?"이메일 또는 비밀번호가 틀려요":x.message}};
 }
-if(window.RDB)RDB.sb.auth.onAuthStateChange(ev=>{
-  if(ev==="SIGNED_IN"||ev==="SIGNED_OUT"){setTimeout(()=>{renderAcct();const f=document.getElementById("view");f.src=f.getAttribute("src")},0)}
+// SIGNED_IN 은 실제 로그인 말고도(탭 전환, 판독지 화면의 세션 복구 등) 반복해서 오므로
+// 로그인한 사용자가 실제로 바뀔 때만 판독지 화면을 다시 불러옴 (안 그러면 새로고침이 무한 반복됨)
+let uid;
+if(window.RDB)RDB.sb.auth.onAuthStateChange((ev,s)=>{
+  const u=s?s.user.id:null;if(u===uid)return;
+  const first=uid===undefined;uid=u;
+  setTimeout(()=>{renderAcct();if(!first){const f=document.getElementById("view");f.src=f.getAttribute("src")}},0);
 });
 renderAcct();
 function route(){
