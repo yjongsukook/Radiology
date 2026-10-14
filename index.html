@@ -107,12 +107,16 @@ const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
 let uid,email="";   // uid: undefined = 아직 확인 전, null = 로그아웃 상태
 
+// 회원가입 임시 중지. 다시 열려면 true 로 바꾸고, Supabase 의 "Allow new users to sign up" 도 켜기
+const SIGNUP_OPEN=false;
+if(!SIGNUP_OPEN)document.querySelector('.tabs [data-mode=signup]').remove();
+
 function renderAcct(){
   const el=$("acct");
   if(!window.RDB){el.textContent="저장소에 연결할 수 없어요 (인터넷 확인)";return}
   el.innerHTML=uid
     ?`<div class="em">${esc(email)}</div><button id="out">로그아웃</button>`
-    :`<button class="p" onclick="location.hash='#login'">로그인</button><button onclick="location.hash='#signup'">회원가입</button>`;
+    :`<button class="p" onclick="location.hash='#login'">로그인</button>`+(SIGNUP_OPEN?`<button onclick="location.hash='#signup'">회원가입</button>`:"");
   if(uid)$("out").onclick=()=>RDB.signOut();
 }
 
@@ -186,7 +190,7 @@ function route(){
   const h=location.hash,authPage=h==="#login"||h==="#signup";
   const m=authPage?null:ready.find(x=>"#"+x.id===h)||ready[0];
   document.querySelectorAll("nav a").forEach(a=>m&&a.dataset.id===m.id?a.setAttribute("aria-current","page"):a.removeAttribute("aria-current"));
-  const name=recovering?"새 비밀번호 설정":m?m.name:h==="#signup"?"회원가입":"로그인";
+  const name=recovering?"새 비밀번호 설정":m?m.name:h==="#signup"&&SIGNUP_OPEN?"회원가입":"로그인";
   $("cur").textContent=name;document.title=name+" · 판독지 스튜디오";
   document.body.classList.remove("open");
   if(uid===undefined)return;   // 로그인 상태 확인 후 다시 불림
@@ -199,7 +203,7 @@ function route(){
   $("auth").hidden=!lock;f.hidden=lock;
   if(lock){
     f.removeAttribute("src");   // 로그아웃하면 판독지 화면을 내림
-    setMode(h==="#signup"?"signup":"login");
+    setMode(h==="#signup"&&SIGNUP_OPEN?"signup":"login");
     $("anote").textContent=authPage?"로그인하면 판독지를 사용할 수 있어요.":`${m.name} 판독지는 로그인 후 사용할 수 있어요.`;
     if(linkErr){$("aerr").textContent=linkErr;linkErr=""}
   }else if(f.getAttribute("src")!==m.file)f.src=m.file;
