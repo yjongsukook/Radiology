@@ -71,7 +71,7 @@ async function del(id){
   try{await GB.remove(id)}catch(e){alert(errText(e));return}
   load();
 }
-(async()=>{if(window.RDB)admin=!!await RDB.user();load()})();
+(async()=>{if(window.RDB)admin=await RDB.isAdmin();load()})();
 </script>
 </body>
 </html>

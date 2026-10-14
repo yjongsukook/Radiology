@@ -384,7 +384,9 @@ const stErr=e=>stMsg(/items/.test(e.message)&&/exist|schema cache/i.test(e.messa
 let LIST=[];
 async function initStore(){
   if(!window.RDB){stMsg("저장소에 연결할 수 없어요 (인터넷 확인).");return}
-  if(!await RDB.user()){stMsg("왼쪽 메뉴에서 로그인하면 사용할 수 있어요.");return}
+  if(!await RDB.user()){   // 이 파일을 직접 열었을 때도 로그인 필요
+    document.querySelector("main").innerHTML=`<section class="card"><h1>로그인이 필요해요</h1><p class="sub">판독지는 로그인 후 사용할 수 있어요.</p><a href="../index.html#login" target="_top">로그인 / 회원가입하러 가기</a></section>`;
+    return}
   $("stbody").hidden=false;stMsg("");
   loadList();loadPhrases();
 }

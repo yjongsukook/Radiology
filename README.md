@@ -22,20 +22,21 @@
 
 ## 내 저장소 (Supabase)
 
-로그인하면 판독지마다 **템플릿, 판독문 기록, 자주 쓰는 문구**를 저장해서 어느 컴퓨터에서든 쓸 수 있습니다.
+판독지는 **로그인해야** 쓸 수 있고, 누구나 이메일로 **회원가입**할 수 있습니다.
+로그인하면 판독지마다 **템플릿, 판독문 기록, 자주 쓰는 문구**를 저장해서 어느 컴퓨터에서든 쓸 수 있습니다. 저장한 내용은 본인만 볼 수 있습니다.
 연결 정보는 `lib/db.js`에 있습니다.
 
 처음 한 번만 설정합니다.
 1. Supabase 대시보드 > **SQL Editor**에서 `supabase/schema.sql` 내용을 붙여넣고 Run.
-2. **Authentication > Users > Add user**로 내 계정(이메일, 비밀번호)을 만들고 "Auto Confirm User"를 체크.
-3. **Authentication > Sign In / Providers**에서 "Allow new users to sign up"을 끕니다. (다른 사람이 가입하지 못하게)
+2. **Authentication > Sign In / Providers**에서 "Allow new users to sign up"을 켭니다.
+3. 가입 메일 인증("Confirm email")은 켜 두는 것을 권장합니다. 인증 링크가 돌아올 주소는 **Authentication > URL Configuration > Site URL**에 사이트 주소(예: GitHub Pages 주소)로 적습니다.
 
 > 저장소에도 환자 식별 정보(이름, 등록번호, 생년월일 등)는 절대 저장하지 마세요.
 
 ## 방명록
 
-메뉴의 **Community > 방명록**에서 누구나 로그인 없이 글을 남기고 볼 수 있습니다. 삭제는 로그인한 사람만 할 수 있습니다.
-처음 한 번 SQL Editor에서 `supabase/guestbook.sql`을 실행해야 합니다.
+메뉴의 **Community > 방명록**에서 누구나 로그인 없이 글을 남기고 볼 수 있습니다. 삭제는 **관리자**만 할 수 있습니다.
+처음 한 번 `supabase/guestbook.sql` 맨 아래의 이메일을 내 로그인 이메일로 바꾼 뒤 SQL Editor에서 실행합니다. (다시 실행해도 안전)
 
 ## 새 판독지 추가하기
 
