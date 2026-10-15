@@ -45,4 +45,4 @@
 2. `index.html`의 `MODULES` 목록에서 해당 항목에 `file:"modules/파일이름.html"`을 적습니다.
 3. 모든 판독지에 공통으로 넣는 것 (`lib/store.js`)
    - `<details class="card" id="store"></details>`와 `Store.init({...})`: 로그인 확인과 내 저장소
-   - Report의 복사 버튼 옆에 `<button onclick="Store.reset()">초기화 (새 환자)</button>`
+   - Report의 복사 버튼 옆에 `<button onclick="Store.reset()">초기화</button>`

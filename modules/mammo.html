@@ -50,7 +50,7 @@ button.p{background:var(--acc);border-color:var(--acc);color:#fff}
   <h1>Mammography 판독문 생성기</h1>
   <p class="sub">클릭 입력 → BI-RADS category 자동 제안 → 판독문 출력. 환자 정보는 입력하지 마세요. 자동 category와 문구는 반드시 직접 검수해서 사용하세요.</p>
 
-  <details class="card" id="impbox">
+  <details class="card" id="impbox" open>
     <summary>기존 판독문 불러오기 (F/U용)</summary>
     <p class="sub">이전 report를 그대로 붙여넣고 불러오기를 누르면 입력 칸과 병변 카드로 바뀌어요. 불러온 병변은 모두 "변화 없음"으로 시작하고, 크기를 고치면 자동으로 크기 증가/감소와 이전 크기가 채워져요.</p>
     <textarea id="src" class="s" style="min-height:140px" placeholder="기존 report 붙여넣기"></textarea>
@@ -94,7 +94,7 @@ button.p{background:var(--acc);border-color:var(--acc);color:#fff}
 <section>
   <h2 style="margin-top:0">Report</h2>
   <textarea id="out" spellcheck="false"></textarea>
-  <div class="row"><button class="p" onclick="copyOut()">복사</button><button onclick="Store.reset()">초기화 (새 환자)</button><span id="msg" class="sub"></span></div>
+  <div class="row"><button class="p" onclick="copyOut()">복사</button><button onclick="Store.reset()">초기화</button><span id="msg" class="sub"></span></div>
 </section>
 </main>
 <script>
