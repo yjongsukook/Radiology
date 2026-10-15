@@ -35,6 +35,9 @@ button.p{background:var(--acc);border-color:var(--acc);color:#fff}
 .it[data-kind=bcalc] .g-size{display:none}
 .it:not([data-chg=i]):not([data-chg=d]) .g-prev{display:none}
 .it:not([data-loc=custom]) .g-loctxt{display:none}
+.prev{font-size:12px;color:var(--mute);background:var(--bg);border-left:3px solid var(--acc);border-radius:3px;padding:4px 8px;margin:6px 0;white-space:pre-wrap}
+.prev:empty{display:none}
+.prev b{color:var(--ink);font-weight:600}
 .it:not([data-chg=u]) .g-fu{display:none}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js"></script>
@@ -120,6 +123,7 @@ function addIt(quiet){
   <select data-k="chg">${opt([["s","보임 (비교 없음)"],["u","변화 없음"],["i","크기 증가"],["d","크기 감소"],["n","새로 발견"]])}</select>
   <label class="g-prev">이전</label><input type="number" step="0.1" min="0" data-k="prev" class="g-prev" placeholder="cm"><label class="g-prev">cm</label>
   <button class="x" onclick="this.closest('.card').remove();upd()">삭제</button></div>
+  <div class="prev" data-o="prev"></div>
   <div class="row g-loc"><label>Nipple로부터</label><input type="number" step="0.1" min="0" data-k="dn" placeholder="cm"><label>cm (선택)</label></div>
   <div class="row g-mass"><select data-k="shape">${opt(["oval","round","irregular"])}</select>
     <select data-k="margin">${opt([["circumscribed","circumscribed"],["obscured","obscured"],["microlobulated","microlobulated"],["indistinct","indistinct"],["spiculated","spiculated"]])}</select>
@@ -285,15 +289,22 @@ Category : ${K} (${CAT[K]})${rec?`\n\nRecommendation : ${rec}`:""}${$("comment")
 /* ---------- 기존 판독문 불러오기 ---------- */
 
 const AUTO_RECS=["정기적 진찰","치밀유방으로 병변이 가려져 발견이 안 될수 있으므로 초음파 검사를 권유.","USG for further evaluation.","USG and pathologic confirmation.",...Object.values(FU_REC)];
-const sideOf=t=>/양측|both|bilateral/i.test(t)?"Both":/\bright\b|우측/i.test(t)?"Right":/\bleft\b|좌측/i.test(t)?"Left":"";
-const locOf=t=>LOCS.find(l=>new RegExp(l.replace(" ","\\s*"),"i").test(t))||"";
-const kindOf=t=>/lymph\s*node/i.test(t)?"ln":/distortion/i.test(t)?"dist":/asymmetry/i.test(t)?"asym":/benign\s+calcification/i.test(t)?"bcalc":/calcification/i.test(t)?"calc":/\bmass\b/i.test(t)?"mass":"";
+const sideOf=t=>/양측|both|bilateral/i.test(t)?"Both":/\bright\b|\brt\b|우측|오른/i.test(t)?"Right":/\bleft\b|\blt\b|좌측|왼/i.test(t)?"Left":"";
+// 위치: 영어 사분면 → 약어·한국어 표현 → 시계 방향 순으로 찾음
+const KLOC=[[/\bUOQ\b|상외측|상외부|외상방/i,"upper outer"],[/\bUIQ\b|상내측|상내부|내상방/i,"upper inner"],[/\bLOQ\b|하외측|하외부|외하방/i,"lower outer"],[/\bLIQ\b|하내측|하내부|내하방/i,"lower inner"],[/retroareolar|유륜하|유두하|유륜\s*(?:밑|아래)/i,"subareolar"],[/액와\s*꼬리/,"axillary tail"]];
+const locOf=t=>LOCS.find(l=>new RegExp(l.replace(" ","\\s*"),"i").test(t))||(KLOC.find(([re])=>re.test(t))||[])[1]||
+  ((t.match(/(\d{1,2})\s*(?:시|o'?\s*clock)/i)||[])[1]?t.match(/(\d{1,2})\s*(?:시|o'?\s*clock)/i)[1]+"시 방향":"");
+const BENIGN_CA=/benign[\w\s-]{0,15}calcification|vascular calcification|coarse calcification|popcorn|rod-?like|dystrophic|milk of calcium|skin calcification|round calcification|양성\s*석회화/i;
+const kindOf=t=>/lymph\s*node|림프절/i.test(t)?"ln":/distortion|구조\s*왜곡/i.test(t)?"dist":/asymmetry|비대칭/i.test(t)?"asym":BENIGN_CA.test(t)?"bcalc":/calcification|석회화/i.test(t)?"calc":/\bmass\b|종괴|결절/i.test(t)?"mass":"";
+// 정상 문장: 크기 없이 "없음 / 보이지 않음 / 정상 / no ~" 로 끝나는 문장 ("변화 없음"은 병변 문장이므로 제외)
+const NEG=/없\s*(?:음|다|고|으며|습니다|어)|않\s*(?:음|다|고|으며|습니다)|정상|(?:^|\s)no\s|unremarkable|not\s+(?:seen|visible|identified)|negative/i;
+const isNormal=s=>!/\d\s*cm/i.test(s)&&NEG.test(s.replace(/(?:interval\s+)?변화\s*(?:는|가|도)?\s*없\S*|no (?:interval )?change|stable/gi,""));
 function lesionOf(line){
   const kind=kindOf(line);if(!kind)return null;
   // 목록에 없는 위치(예: "Right 10시 방향에")는 좌우와 "에" 사이 글자를 그대로 가져옴
-  const own=(line.match(/^(?:Right|Left|양측)\s+(.+?)\s*(?:breast\s*)?에\s/i)||[])[1];
-  const o={kind,side:sideOf(line)||"Right",loc:locOf(line)||(own&&!/nipple|cm/.test(own)?own:""),chg:"u"};
-  const t=line.replace(/nipple로부터\s*(\d+(?:\.\d+)?)\s*cm/i,(m,d)=>{o.dn=d;return""});
+  const own=(line.match(/^(?:Right|Left|양측|우측|좌측)\s+(?:유방\s*)?(.+?)\s*(?:breast\s*)?에\s/i)||[])[1];
+  const o={kind,side:sideOf(line)||"Right",loc:locOf(line)||(own&&!/nipple|cm|유두로부터|^(?:breast|유방)$/i.test(own)?own:""),chg:"u",orig:line};
+  const t=line.replace(/(?:nipple|유두)\s*(?:로|으로)?부터\s*(\d+(?:\.\d+)?)\s*cm/i,(m,d)=>{o.dn=d;return""});
   const ch=t.match(/(\d+(?:\.\d+)?)\s*cm에서\s*(\d+(?:\.\d+)?)\s*cm/);
   if(ch)o.size=ch[2];else{const m=t.match(/(\d+(?:\.\d+)?)\s*cm/);if(m)o.size=m[1]}
   if(kind==="mass"){
@@ -320,7 +331,11 @@ function splitReport(t){
   return n>=0?[t.slice(0,n),t.slice(n)]:[t,""];
 }
 const nrm=s=>s.toLowerCase().replace(/,?\s*stable for [^.]*/,"").replace(/^no change of /,"").replace(/^(a|an) /,"").replace(/[^a-z0-9가-힣]/g,"");
-function newCard(o){addIt(true);const c=$("its").lastElementChild;Object.keys(o).forEach(k=>setVal(c,k,o[k]));c.dataset.orig=o.size||"";return c}
+// 불러온 병변 카드에 이전 판독 문장을 보여 줌 (이전과 비교하며 고치도록)
+function showPrev(c,label,text){const p=c.querySelector("[data-o=prev]");const b=document.createElement("b"),d=document.createElement("div");
+  b.textContent=label+" ";d.append(b,text);p.appendChild(d)}
+function newCard(o){addIt(true);const c=$("its").lastElementChild;Object.keys(o).forEach(k=>setVal(c,k,o[k]));c.dataset.orig=o.size||"";
+  if(o.orig)showPrev(c,"이전 소견:",o.orig);return c}
 
 function importReport(){
   const t=$("src").value.trim();
@@ -333,26 +348,39 @@ function importReport(){
   if(cp)st.comp=/extremely/i.test(cp[1])?"d":/heterogeneous/i.test(cp[1])?"c":/scattered/i.test(cp[1])?"b":/fat/i.test(cp[1])?"a":"";
   const[fp,cpart]=splitReport(t);
 
-  // Findings
-  const L=[],X=[];
+  // Findings: 줄 → 문장 단위로 나눠서 읽음
+  const L=[],X=[];let prevLes=null;
   fp.split("\n").map(s=>s.trim()).filter(Boolean).forEach(raw=>{
     let line=raw.replace(/^findings?\s*:\s*/i,"").trim();if(!line)return;
-    if(/^<.*>$/.test(line)||/^MAMMOGRAPHY\b/i.test(line)||/^Breast\s*Composition/i.test(line))return;
+    if(/^<.*>$/.test(line)||/^MAMMOGRAPHY\b/i.test(line)||/^Breast\s*Composition/i.test(line)){prevLes=null;return}
     const dk=Object.keys(DISC).find(k=>line.replace(/\s/g,"")===DISC[k].replace(/\s/g,""));
-    if(dk){st.disc=dk;return}
-    if(/^유방촬영술은|^환자\s*\(또는|^Implant로 인하여/.test(line)){st.disc="";X.push(line);return}
-    if(/implant/i.test(line)&&/삽입/.test(line)){const s=sideOf(line);st.imp=s==="Right"?"R":s==="Left"?"L":"B";return}
-    if(/postoperative change/i.test(line)){
-      const s=sideOf(line.split(/postoperative/i)[0]);const v=s==="Right"?"R":s==="Left"?"L":"B";
-      st.post=st.post&&st.post!==v?"B":v;
-      if(/recurrence/i.test(line))st.norec=true;
-      return}
-    // 정상 문구 (다시 자동 생성되므로 건너뜀). 한쪽만 정상 문구가 있으면 unilateral 검사
-    const uni=line.match(/^(Right|Left) (?:breast|axillary area)\s*에\s*(?:mass|abnormal)/i);
-    if(uni){st.exam=uni[1][0].toUpperCase();return}
-    if(/이상\s*소견\s*없|이상\s*없|Visualized parenchyma/i.test(line)&&!kindOf(line.replace(/mass\s*나\s*calcification/i,"")))return;
-    const les=lesionOf(line);
-    if(les)L.push(les);else X.push(line);
+    if(dk){st.disc=dk;prevLes=null;return}
+    if(/^유방촬영술은|^환자\s*\(또는|^Implant로 인하여/.test(line)){st.disc="";X.push(line);prevLes=null;return}
+    prevLes=null;
+    for(let sen of line.split(/(?<=[.。])\s+/)){
+      sen=sen.trim();if(!sen)continue;
+      if(/implant/i.test(sen)&&/삽입|insert|place/i.test(sen)){const s=sideOf(sen);st.imp=s==="Right"?"R":s==="Left"?"L":"B";prevLes=null;continue}
+      if(/postoperative change|수술\s*후\s*변화/i.test(sen)){
+        const s=sideOf(sen.split(/postoperative|수술/i)[0]);const v=s==="Right"?"R":s==="Left"?"L":"B";
+        st.post=st.post&&st.post!==v?"B":v;
+        if(/recurrence|재발/i.test(sen))st.norec=true;
+        prevLes=null;continue}
+      // 한쪽만 정상 문구가 있으면 unilateral 검사
+      const uni=sen.match(/^(Right|Left) (?:breast|axillary area)\s*에\s*(?:mass|abnormal)/i);
+      if(uni&&isNormal(sen)){st.exam=uni[1][0].toUpperCase();prevLes=null;continue}
+      // "…가 있으며, 그 외 …이상 없음" 처럼 뒤에 붙은 정상 문구는 잘라냄 (자동으로 다시 생성됨)
+      const front=sen.split(/,?\s*(?:그\s*외|그외|나머지|otherwise)/i)[0].trim();
+      if(!front||isNormal(front)){prevLes=null;continue}
+      const les=lesionOf(front);
+      if(les){L.push(les);prevLes=les;continue}
+      // 병변 바로 뒤에 붙은 설명 문장 (예: "외부에서 biopsy 시행하여 …")은 그 병변의 추가 문구로
+      if(prevLes){
+        if(/biopsy|조직\s*검사/i.test(sen)&&/malignan|암|악성/i.test(sen))prevLes.bx=true;
+        else if(!/(?:으로|로)\s*생각됨|의심됨|시사됨|likely|suggest|consistent with/i.test(sen))   // 판단 문장은 자동 생성되므로 뺌
+          prevLes.cm=(prevLes.cm?prevLes.cm+" ":"")+sen;
+        prevLes.orig+=" "+sen;continue}
+      X.push(sen);
+    }
   });
 
   // Conclusion
@@ -377,10 +405,12 @@ function importReport(){
     if(/^정상 유방촬영술|^Implanted breast|^Postoperative breast/i.test(s)){
       if(/no evidence of (?:recurrence|malignancy)/i.test(s))st.norec=true;last=null;continue}
     if(/^No (?:definite )?evidence of (?:recurrence|malignancy)/i.test(s)){if(st.post)st.norec=true;last=null;continue}
+    // 정상 결론 문장 (No suspicious finding 등)은 자동으로 다시 만들어지므로 건너뜀
+    if((/^no (?!change|interval)|^negative|^normal|^unremarkable|^정상/i.test(s)||isNormal(s))&&!/\d\s*cm/.test(s)){last=null;continue}
     const kd=kindOf(s),sd=sideOf(s);
     const ci=kd?vals.findIndex((x,i)=>!used.has(i)&&(x.kind===kd||(kd==="bcalc"&&x.kind==="calc")||(kd==="calc"&&x.kind==="bcalc"))&&(!sd||x.side===sd)):-1;
     if(ci<0){XC.push(s);last=null;continue}
-    used.add(ci);last=cards[ci];
+    used.add(ci);last=cards[ci];showPrev(last,"이전 결론:",s);
     const gen=build(Object.assign(val(last),{chg:"u",ro:"",conc:"",bx:false})).c;
     if(nrm(gen)!==nrm(s.replace(/^(?:Interval\s+(?:increase|decrease)(?:\s+in\s+size)?\s+of|New)\s+/i,"").replace(/\s*\([^)]*->[^)]*\)/,"")))
       setVal(last,"conc",/^No change/i.test(s)?s:"No change of "+s.replace(/^([A-Z])(?=[a-z\s])/,x=>x.toLowerCase()));
