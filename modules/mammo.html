@@ -419,8 +419,8 @@ function importReport(){
   $("exam").value=st.exam;$("mag").value=st.mag;$("post").value=st.post;$("norec").checked=st.norec;$("imp").value=st.imp;$("comp").value=st.comp;
   $("disc").value=st.disc?st.disc:"auto";
   $("cat").value="auto";
-  // 이전에 이미 Category 2 였던 판독이면, 변화 없는 Category 3 형태 병변은 24개월 이상 안정으로 봄 (다시 3으로 올라가지 않게)
-  if(st.cat==="2")cards.forEach(c=>{const v=val(c);if(!v.fu&&build(Object.assign(v,{fu:""})).cat==="3"&&v.chg==="u")setVal(c,"fu","24")});
+  // 이전에 이미 Category 2 였던 판독이면, Category 3 형태 병변도 benign(2)으로 둠 (기간은 모르므로 "24개월" 이라고 쓰지 않음)
+  if(st.cat==="2")cards.forEach(c=>{const v=val(c);if(v.cat==="auto"&&!v.fu&&build(Object.assign({},v,{fu:""})).cat==="3")setVal(c,"cat","2")});
   // 이전이 Category 3 이면 이번 검사는 다음 추적 단계: 처음 → 6, 6 → 12, 12 → 24개월
   let stepped=0;
   if(st.cat==="3")cards.forEach(c=>{const v=val(c);if(build(Object.assign({},v,{fu:""})).cat!=="3")return;

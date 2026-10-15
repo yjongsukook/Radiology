@@ -13,7 +13,7 @@
 | 분류 | 판독지 | 상태 |
 |---|---|---|
 | Ultrasound | 갑상선 초음파 (K-TIRADS) | 사용 가능 |
-| Ultrasound | 유방 초음파 | 준비 중 |
+| Ultrasound | 유방 초음파 (BI-RADS) | 사용 가능 |
 | Ultrasound | 근골격계 초음파 | 준비 중 |
 | Ultrasound | 복부 초음파 | 준비 중 |
 | Mammography | Mammography (BI-RADS) | 사용 가능 |

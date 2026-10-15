@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Breast US 판독문 생성기</title>
+<style>
+:root{--bg:#f5f6f4;--card:#fff;--ink:#1d2421;--mute:#66706b;--line:#d5dbd7;--acc:#1f6f5c;--warn:#a8452a}
+@media(prefers-color-scheme:dark){:root{--bg:#161a18;--card:#202623;--ink:#e6ebe8;--mute:#93a09a;--line:#34403b;--acc:#58b9a0;--warn:#e08a6c}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 "Pretendard","Noto Sans KR",system-ui,sans-serif}
+main{max-width:1150px;margin:0 auto;padding:16px;display:grid;grid-template-columns:1.1fr .9fr;gap:16px}
+@media(max-width:860px){main{grid-template-columns:1fr}}
+h1{font-size:18px;margin:0 0 4px}h2{font-size:14px;margin:14px 0 6px}
+.sub{color:var(--mute);font-size:12px;margin:0 0 8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:10px;margin-bottom:10px}
+summary{cursor:pointer;font-weight:600}
+.row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:4px 0}
+label{font-size:12px;color:var(--mute)}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:4px 6px;max-width:100%}
+input[type=number]{width:78px}input[type=text]{flex:1;min-width:140px}
+textarea.s{width:100%;min-height:64px;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace}
+.ck{display:inline-flex;gap:4px;align-items:center;color:var(--ink);font-size:13px}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:4px;padding:5px 10px}
+button.p{background:var(--acc);border-color:var(--acc);color:#fff}
+:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.k{font-weight:600;color:var(--acc)}
+#out{width:100%;min-height:480px;font:13px/1.55 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap}
+.x{margin-left:auto;color:var(--warn)}
+/* 병변 종류별로 필요한 칸만 보이기 */
+.it:not([data-kind=mass]) .g-mass{display:none}
+.it:not([data-kind=cyst]) .g-cyst{display:none}
+.it:not([data-kind=ln]) .g-ln{display:none}
+.it:not([data-kind=benign]) .g-benign{display:none}
+.it:not([data-kind=ectasia]) .g-ect{display:none}
+.it[data-kind=gyneco] .g-loc,.it[data-kind=gyneco] .g-size,.it[data-kind=gyneco] .g-cnt{display:none}
+.it[data-kind=ln][data-lnloc=axillary] .g-loc{display:none}
+.it:not([data-kind=ln]) .g-lv,.it[data-lnloc=intramammary] .g-lv{display:none}
+.it:not([data-chg=i]):not([data-chg=d]) .g-prev{display:none}
+.it:not([data-loc=custom]) .g-loctxt{display:none}
+.it:not([data-chg=u]) .g-fu{display:none}
+.prev{font-size:12px;color:var(--mute);background:var(--bg);border-left:3px solid var(--acc);border-radius:3px;padding:4px 8px;margin:6px 0;white-space:pre-wrap}
+.prev:empty{display:none}
+.prev b{color:var(--ink);font-weight:600}
+#equipTxt:disabled{opacity:.5}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js"></script>
+<script src="../lib/db.js"></script>
+<script src="../lib/store.js"></script>
+</head>
+<body>
+<main>
+<section>
+  <h1>Breast US 판독문 생성기</h1>
+  <p class="sub">클릭 입력 → BI-RADS category 자동 제안 → 판독문 출력. 환자 정보는 입력하지 마세요. 자동 category와 문구는 반드시 직접 검수해서 사용하세요.</p>
+
+  <details class="card" id="impbox" open>
+    <summary>기존 판독문 불러오기 (F/U용)</summary>
+    <p class="sub">이전 report를 그대로 붙여넣고 불러오기를 누르면 입력 칸과 병변 카드로 바뀌어요. 불러온 병변은 모두 "변화 없음"으로 시작하고, 크기를 고치면 자동으로 크기 증가/감소와 이전 크기가 채워져요.</p>
+    <textarea id="src" class="s" style="min-height:140px" placeholder="기존 report 붙여넣기"></textarea>
+    <div class="row"><button class="p" onclick="importReport()">불러오기</button><button onclick="clearSrc()">지우기</button><span id="impmsg" class="sub"></span></div>
+  </details>
+
+  <details class="card" id="store"></details>
+
+  <div class="card">
+    <div class="row"><label>검사</label>
+      <select id="exam"><option value="G">General</option><option value="D">Detailed</option></select>
+      <label class="ck"><input type="checkbox" id="equip" checked> 장비 상용구</label></div>
+    <div class="row"><input type="text" id="equipTxt" value="유방 전용 초음파기기와 표재성 장기용 선형 탐촉자 (12-18MHz) 이용."></div>
+    <div class="row"><label>Tissue composition</label>
+      <select id="comp"><option value="">(생략)</option><option value="a">a. Homogeneous - fat</option><option value="b">b. Homogeneous - fibroglandular</option><option value="c" selected>c. Heterogeneous</option></select></div>
+    <div class="row"><label>Reason</label><select id="rsel"></select><input type="text" id="reason" value="Screening" list="pl-reason"></div>
+    <div class="row"><label>수술</label>
+      <select id="post"><option value="">없음</option><option value="RP">Right partial mastectomy (BCS)</option><option value="LP">Left partial mastectomy (BCS)</option><option value="RT">Right total mastectomy</option><option value="LT">Left total mastectomy</option></select>
+      <label class="ck"><input type="checkbox" id="norec" checked> recurrence 소견 없음 문구</label></div>
+    <div class="row"><label>평가 제한</label>
+      <label class="ck"><input type="checkbox" id="edema"> op. site edema·skin thickening</label>
+      <label class="ck"><input type="checkbox" id="redund"> big redundant breast</label></div>
+    <div class="row"><label>Implant</label>
+      <select id="imp"><option value="">없음</option><option value="B">양측</option><option value="R">Right</option><option value="L">Left</option></select>
+      <label class="ck"><input type="checkbox" id="intact" checked> intact 문구</label></div>
+    <div class="row"><label>석회화·유관확장 문구</label>
+      <select id="cdl"><option value="B">abnormal calcifications or duct ectasia 뚜렷하지 않음</option><option value="A">석회화 확인되지 않으며 유관 확장 소견 없음</option><option value="">빼기</option></select></div>
+    <div class="row"><label>나머지 정상 문구</label>
+      <select id="rest"><option value="1">넣기</option><option value="">빼기</option></select></div>
+    <div class="row"><label>Category</label>
+      <select id="cat"><option value="auto">자동 (가장 높은 병변 기준)</option><option>0</option><option>1</option><option>2</option><option>3</option><option>4a</option><option>4b</option><option>4c</option><option>5</option><option>6</option></select>
+      <span class="k" id="catShow"></span>
+      <select id="catLabel"><option value="Category">Category :</option><option value="BI-RADS Category">BI-RADS Category :</option></select></div>
+    <div class="row"><label>Rec</label><input type="text" id="rec" list="pl-rec" placeholder="비우면 자동"></div>
+    <div class="row"><label>Comment</label><input type="text" id="comment" list="pl-comment" placeholder="선택"></div>
+  </div>
+
+  <h2>병변 (병변이 없으면 정상 양식으로 출력)</h2><div id="its"></div>
+  <button onclick="addIt()">+ 병변 추가</button>
+
+  <details class="card" id="xtra" style="margin-top:12px">
+    <summary>기타 줄 (불러오기에서 해석하지 못한 줄, 그대로 출력)</summary>
+    <label>Findings</label><textarea id="extraF" class="s"></textarea>
+    <label>Conclusion (번호는 자동)</label><textarea id="extraC" class="s"></textarea>
+  </details>
+</section>
+<section>
+  <h2 style="margin-top:0">Report</h2>
+  <textarea id="out" spellcheck="false"></textarea>
+  <div class="row"><button class="p" onclick="copyOut()">복사</button><button onclick="Store.reset()">초기화</button><span id="msg" class="sub"></span></div>
+</section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const opt=a=>a.map(v=>Array.isArray(v)?`<option value="${v[0]}">${v[1]}</option>`:`<option>${v}</option>`).join("");
+const COMP={a:"Homogeneous background echotexture - fat.",b:"Homogeneous background echotexture - fibroglandular.",c:"Heterogeneous background echotexture."};
+const CAT={"0":"Incomplete","1":"Negative","2":"Benign finding(s)","3":"Probably benign","4a":"Low suspicion for malignancy","4b":"Moderate suspicion for malignancy","4c":"High suspicion for malignancy","5":"Highly suggestive of malignancy","6":"Known biopsy-proven malignancy"};
+const RANK=["1","2","3","0","4a","4b","4c","5","6"];   // 전체 category 는 이 순서로 가장 높은 것
+const REASONS=[["Screening",""],["Screening after right partial mastectomy.","RP"],["Screening after left partial mastectomy.","LP"],["Postop screening after right total mastectomy.","RT"],["Postop screening after left total mastectomy.","LT"],["F/U for US abnormality.",""],["Abnormal outside MG.",""],["Right palpable mass.",""],["Left palpable mass.",""]];
+const SIDE={R:"Right",L:"Left"},OTHER={R:"Left",L:"Right"};
+const LOCS=[...Array.from({length:12},(_,i)=>(i+1)+"H"),"subareolar","UOQ","UIQ","LOQ","LIQ","upper center","lower center","mid outer","mid inner","axillary tail","op. site"];
+const COUNT={"1":"","two":"two","several":"several","a few":"a few","multiple":"multiple","pl":""};
+// 영어 단어 뒤 조사: 받침 있는 발음(-ion, nodule, lesion)이면 이/은
+const batchim=w=>/(?:ion|nodule|lesion|lipoma)$/i.test(w.trim());
+const jo=(w,a,b)=>batchim(w)?a:b;
+const plural=w=>/s$/.test(w)?w:w+"s";
+
+$("rsel").innerHTML=REASONS.map((r,i)=>`<option value="${i}">${r[0]}</option>`).join("")+`<option value="x">직접 입력</option>`;
+$("rsel").onchange=()=>{const r=REASONS[$("rsel").value];if(r){$("reason").value=r[0];$("post").value=r[1]}upd()};
+
+function addIt(quiet){
+  const d=document.createElement("div");d.className="card it";d.dataset.kind="mass";d.dataset.chg="s";
+  d.innerHTML=`<div class="row"><select data-k="kind">${opt([["mass","Nodule / Mass"],["cyst","Cyst"],["ln","Lymph node"],["benign","기타 benign (lipoma 등)"],["ectasia","Duct ectasia"],["calc","Calcification"],["gyneco","Gynecomastia"]])}</select>
+  <select data-k="side">${opt(["Right","Left","Both"])}</select>
+  <select class="g-loc" data-k="locSel">${opt([["","위치 선택"],...LOCS,["__","직접 입력…"]])}</select>
+  <input type="text" class="g-loc g-loctxt" data-k="locTxt" placeholder="위치 직접 입력" style="flex:0 1 150px">
+  <span class="g-size"><input type="number" step="0.1" min="0" data-k="size" placeholder="cm"><label> cm</label></span>
+  <select data-k="chg">${opt([["s","보임 (비교 없음)"],["u","변화 없음"],["i","크기 증가"],["d","크기 감소"],["n","새로 발견"]])}</select>
+  <label class="g-prev">이전</label><input type="number" step="0.1" min="0" data-k="prev" class="g-prev" placeholder="cm"><label class="g-prev">cm</label>
+  <button class="x" onclick="this.closest('.card').remove();upd()">삭제</button></div>
+  <div class="prev" data-o="prev"></div>
+  <div class="row"><span class="g-loc"><label>Nipple로부터</label> <input type="number" step="0.1" min="0" data-k="dn" placeholder="cm"><label> cm 거리</label></span>
+    <span class="g-cnt"><label>개수</label> <select data-k="cnt">${opt([["1","1개"],["two","two"],["several","several"],["a few","a few"],["multiple","multiple"],["pl","복수 (수 표기 없음)"]])}</select></span></div>
+  <div class="row g-mass"><select data-k="term">${opt(["nodule","mass","lesion"])}</select>
+    <select data-k="shape">${opt(["oval","round","irregular",["","(shape 미기재)"]])}</select>
+    <select data-k="orient">${opt([["parallel","parallel"],["not parallel","not parallel"]])}</select>
+    <select data-k="margin">${opt(["circumscribed","indistinct","angular","microlobulated","spiculated"])}</select>
+    <select data-k="echo">${opt(["hypoechoic","isoechoic","hyperechoic","heterogeneous","complex cystic and solid",["","(echo 미기재)"]])}</select>
+    <select data-k="post">${opt([["","posterior features 없음"],["enhancement","posterior enhancement"],["shadowing","posterior shadowing"],["combined","combined posterior features"]])}</select>
+    <label class="ck"><input type="checkbox" data-k="calcIn">내부 calcification</label></div>
+  <div class="row g-cyst"><select data-k="ctype">${opt(["simple cyst","benign cyst","tiny benign cyst","complicated cyst","clustered microcysts"])}</select></div>
+  <div class="row g-ln"><select data-k="lnloc">${opt([["axillary","Axillary"],["intramammary","Intramammary"]])}</select>
+    <select class="g-lv" data-k="level">${opt([["","level 표기 안 함"],"I","II","III","I and II"])}</select>
+    <select data-k="lnchar">${opt(["benign","indeterminate","suspicious metastatic"])}</select></div>
+  <div class="row g-benign"><select data-k="bname">${opt(["lipoma","skin nodule","fat necrosis","fat lobule","hamartoma","sebaceous cyst"])}</select></div>
+  <div class="row g-ect"><select data-k="ectAdj">${opt([["mild","mild"],["","(정도 표기 안 함)"]])}</select></div>
+  <div class="row g-fu"><label>Category 3 추적</label><select data-k="fu">${opt([["","(해당 없음)"],["6","6개월 변화 없음 → 3 유지"],["12","12개월 변화 없음 → 3 유지"],["24","24개월 이상 변화 없음 → 2로 하향"]])}</select></div>
+  <div class="row"><label>Biopsy</label><select data-k="bx">${opt([["","없음"],["done","이번에 biopsy 시행함"],["benign","biopsy-proven benign"],["malig","biopsy-proven malignancy"]])}</select>
+    <label>Category</label><select data-k="cat">${opt([["auto","자동"],"2","3","0","4a","4b","4c","5","6"])}</select>
+    <span class="k" data-o="cat"></span></div>
+  <div class="row"><input type="text" data-k="cm" placeholder="Findings 추가 문구">
+    <input type="text" data-k="ro" placeholder="Conclusion 아래 -> 줄 (여러 개는 ; 로 구분)"></div>
+  <div class="row"><input type="text" data-k="conc" placeholder="Conclusion 문장 직접 입력 (비우면 자동 생성)"></div>`;
+  $("its").appendChild(d);if(!quiet)upd();
+}
+function val(c){const o={};c.querySelectorAll("[data-k]").forEach(e=>o[e.dataset.k]=e.type==="checkbox"?e.checked:e.value);
+  o.loc=o.locSel==="__"?o.locTxt.trim():o.locSel;return o}
+function setVal(c,k,v){
+  if(k==="loc"){if(!v)return;const inList=LOCS.includes(v);setVal(c,"locSel",inList?v:"__");if(!inList)setVal(c,"locTxt",v);return}
+  const e=c.querySelector(`[data-k="${k}"]`);if(!e||v===undefined)return;
+  if(e.type==="checkbox")e.checked=!!v;
+  else if(e.tagName==="SELECT"){if([...e.options].some(o=>o.value===String(v)))e.value=String(v)}
+  else e.value=v}
+
+// BI-RADS (US) category 자동 제안 — ACR BI-RADS 5판을 단순화한 규칙. 반드시 직접 검수
+function autoCat(v){
+  if(v.bx==="malig")return"6";
+  if(v.bx==="benign")return"2";
+  switch(v.kind){
+    case"cyst":return v.ctype==="complicated cyst"?"3":"2";
+    case"ln":return v.lnchar==="suspicious metastatic"?"4b":v.lnchar==="indeterminate"?"4a":"2";
+    case"mass":{
+      const n=[v.shape==="irregular",v.orient==="not parallel",v.margin!=="circumscribed",v.post==="shadowing",v.calcIn,v.echo==="complex cystic and solid"].filter(Boolean).length;
+      if(n===0){if(v.echo==="hyperechoic")return"2";return v.chg==="i"?"4a":"3"}
+      if(n>=3)return v.margin==="spiculated"&&v.shape==="irregular"?"5":"4c";
+      return n===2?"4b":"4a"}
+    default:return"2";   // 기타 benign, duct ectasia, calcification, gynecomastia
+  }
+}
+// Category 3 추적 (ACR BI-RADS 5판): 6 → 12 → 24개월 추적. 6·12개월에 변화 없으면 3 유지, 24개월 이상 변화 없으면 2로 하향
+const FU_REC={"":"F/U US in 6 months.","6":"F/U US in 6 months.","12":"F/U US in 12 months."};
+const ROUTINE="Routine mammography screening with/without breast USG";
+
+function build(v){
+  let cat=v.cat==="auto"?autoCat(v):v.cat;
+  const fu=v.chg==="u"&&cat==="3"?v.fu:"";
+  if(fu==="24")cat="2";
+  const s=parseFloat(v.size)||0,p=parseFloat(v.prev)||0;
+  const chd=(v.chg==="i"||v.chg==="d")&&p>0&&s>0;
+  const both=v.side==="Both",sideK=both?"양측":v.side,sideE=both?"both":v.side.toLowerCase();
+  const multi=v.cnt!=="1"&&v.kind!=="gyneco",cw=COUNT[v.cnt]||"";
+  const num=chd?"":s?(multi?`최대 ${s}cm 크기의 `:`약 ${s}cm `):"";
+  const axill=v.kind==="ln"&&v.lnloc==="axillary";
+  const dn=parseFloat(v.dn)&&!axill?`, ${parseFloat(v.dn)}cm 거리`:"";
+  const loc=axill?`${sideK} axilla${v.level?` level ${v.level}`:""}`:v.loc?`${sideK} ${v.loc}${dn}`:`${sideK} breast${dn}`;
+  const cloc=axill?`${sideE} axilla${v.level?` level ${v.level}`:""}`:v.loc?`${sideE} ${v.loc}`:(both?"both breasts":sideE+" breast");
+  const pl=w=>multi?plural(w):w;
+  const label={"2":"benign","3":"probably benign","0":"indeterminate","4a":"indeterminate","4b":"indeterminate","4c":"suspicious","5":"suspicious malignant","6":"biopsy-proven malignant"}[cat];
+  let noun,cn,impr="";
+  if(v.kind==="mass"){
+    const feats=[v.shape,v.orient==="not parallel"?"not parallel":"",v.margin!=="circumscribed"?v.margin+" margin을 보이는":""].filter(Boolean).join(", ");
+    const extra=[v.post?{enhancement:"posterior enhancement",shadowing:"posterior shadowing",combined:"combined posterior features"}[v.post]:"",v.calcIn?"내부 calcification":""].filter(Boolean);
+    noun=`${num}${cw?cw+" ":""}${[feats,v.echo,pl(v.term)].filter(Boolean).join(" ")}${extra.length?` (${extra.join(", ")} 동반)`:""}`;
+    if(chd||v.chg==="u")noun=[s&&!chd&&!multi?s+"cm":"",cw,v.shape,v.echo,pl(v.term)].filter(Boolean).join(" ");   // F/U 문장은 짧게
+    impr={"2":"benign으로 생각됨","3":"probably benign으로 생각됨","0":"추가 검사가 필요함","4a":"indeterminate lesion으로 생각됨","4b":"indeterminate lesion으로 생각됨","4c":"suspicious lesion으로 생각됨","5":"suspicious malignant mass로 생각됨","6":""}[cat];
+    const lb=v.bx==="benign"?"biopsy-proven benign":label;
+    cn=multi?`${cw?cw+" ":""}${lb} ${pl(v.term)}`:`${s?s+"cm ":""}${lb} ${v.term}`;
+  }else if(v.kind==="cyst"){
+    const ct=v.ctype==="clustered microcysts"?v.ctype:pl(v.ctype);
+    noun=`${num}${cw?cw+" ":""}${ct}`;cn=multi||v.ctype==="clustered microcysts"?`${cw?cw+" ":""}${ct}`:`${s?s+"cm ":""}${v.ctype}`;
+  }else if(v.kind==="ln"){
+    const t=`${v.lnchar} ${v.lnloc==="intramammary"?"intramammary ":""}lymph node`;
+    noun=`${num}${cw?cw+" ":""}${pl(t)}`;cn=`${cw?cw+" ":""}${multi?plural(t):(s?s+"cm ":"")+t}`;
+    if(v.lnchar!=="benign")impr={"4a":"indeterminate lymph node로 생각됨","4b":"metastasis로 생각됨","4c":"metastasis로 생각됨","5":"metastasis로 생각됨"}[cat]||"";
+  }else if(v.kind==="benign"){
+    noun=`${num}${cw?cw+" ":""}benign ${pl(v.bname)}`;cn=`${multi?(cw?cw+" ":""):(s?s+"cm ":"")}benign ${pl(v.bname)}`;
+  }else if(v.kind==="ectasia"){noun=`${v.ectAdj?v.ectAdj+" ":""}benign duct ectasia`;cn=`${v.ectAdj?v.ectAdj+" ":""}duct ectasia`}
+  else if(v.kind==="calc"){noun=`${cw?cw+" ":""}${multi?"benign calcifications":"benign calcification"}`;cn=noun}
+  else{noun="gynecomastia 소견";cn="Gynecomastia"}
+
+  // Findings 문장
+  let f;
+  if(v.kind==="gyneco"&&(v.chg==="s"||v.chg==="n"))
+    f=`${sideK} breast subareolar area에 triangular shape의 hypoechoic lesion이 ${v.chg==="n"?"새로 ":""}있음. Gynecomastia 소견에 합당함.`;
+  else if(v.kind==="gyneco")f=`${sideK} breast subareolar area에 보이던 gynecomastia 소견은 ${v.chg==="u"?"변화 없음":(v.chg==="i"?"증가함":"감소함")}.`;
+  else if(v.chg==="n")f=`${loc}에 ${noun}${jo(noun,"이","가")} 새로 관찰됨${impr?", "+impr:""}.`;
+  else if(v.chg==="s")f=`${loc}에 ${noun}${jo(noun,"이","가")} ${impr?"있는데 "+impr:"있음"}.`;
+  else if(chd)f=`${loc}에 보이던 ${noun}${jo(noun,"은","는")} ${p}cm에서 ${s}cm으로 크기 ${v.chg==="i"?"증가":"감소"}함.`;
+  else f=`${loc}에 보이던 ${noun}${jo(noun,"은","는")} ${fu==="24"?"24개월 이상 변화 없어 benign으로 생각됨":(fu?fu+"개월간 ":"이전과 ")+"변화 없음"}.`;
+  if(v.bx==="done")f+=" 이 병변에 대하여 biopsy 시행함.";
+  if(v.bx==="benign")f+=" Biopsy에서 benign으로 확진됨.";
+  if(v.bx==="malig")f+=" Biopsy에서 malignancy로 확진됨.";
+  if(v.cm)f+=" "+v.cm;
+
+  // Conclusion 문장
+  const art=!multi&&v.kind!=="gyneco"&&v.kind!=="ectasia"&&!(v.kind==="cyst"&&v.ctype==="clustered microcysts")?(/^[aeiou8]|^11/i.test(cn)?"an ":"a "):"";
+  const pre={s:"",u:"No change of ",n:"New ",i:"Interval increase in size of ",d:"Interval decrease in size of "}[v.chg];
+  let body=(v.chg==="n"?"":art)+cn;
+  if(v.kind==="gyneco")body="gynecomastia";
+  let c=pre?pre+body:body;
+  c+=`, ${v.kind==="gyneco"?sideE+" breast":cloc}`+(chd?` (${p}cm -> ${s}cm)`:"")+(fu?`, stable for ${fu==="24"?"24 months or more":fu+" months"}`:"")+".";
+  c=c[0].toUpperCase()+c.slice(1);
+  if(v.conc&&v.conc.trim())c=v.conc.trim();
+  if(v.bx==="done")c+="\n    -> Biopsy was done.";
+  if(v.ro)c+=v.ro.split(/\s*;\s*/).filter(Boolean).map(x=>"\n    -> "+x).join("");
+  return{f,c,cat,fu,side:v.side,axill,bx:v.bx};
+}
+
+function upd(){
+  const its=[...document.querySelectorAll(".it")].map(c=>{const v=val(c);
+    c.dataset.kind=v.kind;c.dataset.chg=v.chg;c.dataset.loc=v.locSel==="__"?"custom":"";c.dataset.lnloc=v.lnloc;
+    const b=build(v);c.querySelector("[data-o=cat]").textContent=`→ Category ${b.cat}`;return b});
+  const post=$("post").value,ps=post[0],total=post[1]==="T",imp=$("imp").value;
+  $("equipTxt").disabled=!$("equip").checked;
+  const lines=id=>$(id).value.split("\n").map(s=>s.trim()).filter(Boolean);
+  const xf=lines("extraF"),xc=lines("extraC");
+  const F=[],C=[];
+
+  if(post&&$("norec").checked)F.push("Operation site에 local recurrence의 evidence 없음.");
+  if(post&&$("edema").checked)F.push(`${SIDE[ps]} breast op. site에 diffuse edematous change과 skin thickening을 동반한 postoperative change가 있어 local recurrence의 evaluation이 제한적임.`);
+  if($("redund").checked)F.push("Big redundant breast로 evaluation 에 제한이 있음.");
+  if(imp)F.push(`${imp==="B"?"양측":SIDE[imp]} breast에 implant가 삽입되어 있음${$("intact").checked?"이며 implant는 intact함":""}.`);
+  its.forEach(b=>F.push(b.f));
+  xf.forEach(t=>F.push(t));
+  if($("rest").value){
+    const breastLes=its.filter(b=>!b.axill),sides=new Set(breastLes.flatMap(b=>b.side==="Both"?["Right","Left"]:[b.side]));
+    // 유방 실질
+    if(post){
+      const scope=total?OTHER[ps]+" breast":"Remaining breast";
+      F.push(`${breastLes.length||xf.length?"이외 ":""}${scope}에 새로 생긴 병변 없음.`);
+    }else if(!breastLes.length&&!xf.length)F.push("양측 breast에 focal lesion 보이지 않음.");
+    else if(sides.size===1)F.push(`${OTHER[[...sides][0][0]]} breast에 focal lesion 없음.`);
+    else F.push("이외 양측 breast에 새로 생긴 focal lesion 없음.");
+    // 석회화·유관확장 (항상)
+    const cs=post&&total?OTHER[ps]+" breast":"양측";
+    if($("cdl").value==="A")F.push(`${cs==="양측"?"양측 유방":cs}에 석회화 확인되지 않으며 유관 확장 소견 없음.`);
+    else if($("cdl").value==="B")F.push(`${cs}에 abnormal calcifications or duct ectasia 뚜렷하지 않음.`);
+    // 액와
+    const ax=new Set(its.filter(b=>b.axill).flatMap(b=>b.side==="Both"?["Right","Left"]:[b.side]));
+    if(!ax.size)F.push("양측 axillary area에 abnormal enlarged lymph node 없음.");
+    else if(ax.size===1)F.push(`${OTHER[[...ax][0][0]]} axillary area에 abnormal enlarged lymph node 없음.`);
+    // Detailed: 흉골옆·쇄골위 림프절
+    if($("exam").value==="D")F.push(`${post?SIDE[ps]:"양측"} intercostal space 및 supraclavicular area에 의미있게 커진 lymph node 없음.`);
+  }
+
+  if(post&&$("norec").checked)C.push("No evidence of tumor recurrence.");
+  if(post&&$("edema").checked)C.push(`Limited evaluation d/t diffuse edematous change and skin thickening, ${SIDE[ps].toLowerCase()}.`);
+  if($("redund").checked)C.push("Limited evaluation d/t big redundant breast.");
+  if(imp&&$("intact").checked)C.push(`Intact implant${imp==="B"?"s, both":", "+SIDE[imp].toLowerCase()}.`);
+  its.forEach(b=>C.push(b.c));
+  xc.forEach(t=>C.push(t));
+  if(!C.length)C.push("Negative breast USG");
+  const concl=C.length>1?"Conclusion:\n"+C.map((t,i)=>`${i+1}. ${t}`).join("\n"):"Conclusion: "+C[0];
+
+  let K=$("cat").value;
+  if(K==="auto"){const ks=its.map(b=>b.cat);K=ks.length?ks.reduce((a,b)=>RANK.indexOf(b)>RANK.indexOf(a)?b:a):"1"}
+  $("catShow").textContent=$("cat").value==="auto"?`→ ${K}`:"";
+  const fus=its.filter(b=>b.cat==="3").map(b=>b.fu||"");
+  const fu3=fus.includes("")?"":fus.includes("6")?"6":"12";
+  const done=its.some(b=>b.bx==="done");
+  const autoRec={"1":ROUTINE,"2":ROUTINE,"3":FU_REC[fu3],"0":"Additional evaluation with mammography.","6":""}[K]??(done?"Pathologic confirm.":"US-guided core needle biopsy.");
+  $("rec").placeholder="비우면 자동: "+(autoRec||"(없음)");
+  const rec=$("rec").value.trim()||autoRec;
+
+  const head=$("exam").value==="D"?"<BREAST Detailed US>":"<BREAST US>";
+  const top=[$("equip").checked?$("equipTxt").value.trim():"",$("comp").value?"Tissue composition: "+COMP[$("comp").value]:""].filter(Boolean);
+  $("out").value=`${head}
+${top.length?top.join("\n")+"\n":""}
+Reason for Exam: ${$("reason").value}
+
+Findings :
+${F.join("\n")}
+====== [Conclusion] ======
+<BREAST US>
+${concl}
+
+${$("catLabel").value} : ${K} (${CAT[K]})${rec?`\n\nRecommendation: ${rec}`:""}${$("comment").value?`\n\nComment : ${$("comment").value}`:""}`;
+}
+
+/* ---------- 기존 판독문 불러오기 ---------- */
+const AUTO_RECS=[ROUTINE,"Additional evaluation with mammography.","US-guided core needle biopsy.","Pathologic confirm.",...Object.values(FU_REC)];
+const sideOf=t=>/양측|both|bilateral/i.test(t)?"Both":/\bright\b|\brt\b|\brigh\b|우측|오른/i.test(t)?"Right":/\bleft\b|\blt\b|좌측|왼/i.test(t)?"Left":"";
+const QUAD=[[/\bUOQ\b|upper\s*outer|상외측/i,"UOQ"],[/\bUIQ\b|upper\s*inner|상내측/i,"UIQ"],[/\bLOQ\b|lower\s*outer|하외측/i,"LOQ"],[/\bLIQ\b|lower\s*inner|하내측/i,"LIQ"],[/upper\s*center/i,"upper center"],[/lower\s*center/i,"lower center"],[/mid\s*outer/i,"mid outer"],[/mid\s*inner/i,"mid inner"],[/subareolar|retroareolar|유륜하|유두하/i,"subareolar"],[/axillary\s*tail/i,"axillary tail"],[/op(?:eration|\.)?\s*(?:site|bed)/i,"op. site"]];
+// 위치: 문장에 나오는 순서대로 모두 찾아서, 여러 개면 " 및 " 으로 이음 (예: "mid outer 및 upper center")
+function locsOf(t){
+  const found=[];
+  for(const m of t.matchAll(/\b(1[0-2]|[1-9])\s*(?:H\b|시)/g))found.push([m.index,m[1]+"H"]);
+  for(const[re,name] of QUAD){const m=t.match(re);if(m)found.push([m.index,name])}
+  return[...new Map(found.sort((a,b)=>a[0]-b[0]).map(f=>[f[1],f])).keys()];
+}
+const locOf=t=>locsOf(t).join(" 및 ");
+const kindOf=t=>/gynecomastia/i.test(t)?"gyneco":/lymph\s*node|림프절|\bLNs?\b/i.test(t)?"ln":/duct\s*ectasia|유관\s*확장/i.test(t)?"ectasia":/lipoma|skin nodule|fat lobule|hamartoma|sebaceous/i.test(t)?"benign":/cyst/i.test(t)?"cyst":/nodule|\bmass\b|\bFA\b|fibroadenoma|lesion|종괴|결절/i.test(t)?"mass":/fat necrosis/i.test(t)?"benign":/calcification|석회화/i.test(t)?"calc":"";
+const NEG=/없\s*(?:음|다|고|으며|습니다|어)|않\s*(?:음|다|고|으며|습니다)|특이\s*소견|정상|(?:^|\s)no\s|unremarkable|not\s+(?:seen|visible|identified)|negative/i;
+const isNormal=s=>!/\d\s*cm/i.test(s)&&NEG.test(s.replace(/(?:의미\s*있는\s*)?(?:interval\s+)?변화\s*(?:는|가|도)?\s*없\S*|no (?:interval )?change|stable/gi,""));
+function lesionOf(sen,ctx){
+  const kind=kindOf(sen);if(!kind)return null;
+  const o={kind,side:sideOf(sen)||ctx.side||"Right",loc:locOf(sen)||(kind==="ln"?"":ctx.loc||""),chg:"u",orig:sen};
+  let t=sen.replace(/(\d+(?:\.\d+)?)\s*cm\s*(?:거리|from nipple)|(?:nipple|유두)\s*(?:로|으로)?부터\s*(\d+(?:\.\d+)?)\s*cm/gi,(m,a,b)=>{o.dn=a||b;return""});
+  const ch=t.match(/(\d+(?:\.\d+)?)\s*cm에서\s*(\d+(?:\.\d+)?)\s*cm/);
+  const sizes=[...t.matchAll(/(\d+(?:\.\d+)?)\s*(cm|mm)\b/gi)].map(m=>m[2].toLowerCase()==="mm"?+m[1]/10:+m[1]);
+  if(ch)o.size=ch[2];else if(sizes.length)o.size=String(Math.max(...sizes));
+  const cw=(t.match(/\b(two|three|several|a few|multiple)\b|여러\s*개|몇\s*개/i)||[])[0];
+  if(cw)o.cnt=/three|여러|몇/i.test(cw)?"several":cw.toLowerCase();
+  else if(sizes.length>=2)o.cnt=sizes.length===2?"two":"several";
+  else if(/\b(?:nodules|masses|cysts|lymph nodes|lesions|calcifications|lipomas)\b|들/i.test(t))o.cnt="pl";
+  if(kind==="mass"){
+    o.term=/\bmass\b/i.test(t)?"mass":/lesion/i.test(t)&&!/nodule/i.test(t)?"lesion":"nodule";
+    o.shape=(t.match(/\b(oval|round|irregular)\b/i)||[])[1];
+    o.orient=/not\s*parallel|taller/i.test(t)?"not parallel":undefined;
+    o.margin=(t.match(/\b(indistinct|angular|microlobulated|spiculated)\b/i)||[])[1]||(/ill-?defined/i.test(t)?"indistinct":undefined);
+    o.echo=/complex/i.test(t)?"complex cystic and solid":(t.match(/\b(hypoechoic|isoechoic|hyperechoic|heterogeneous)\b/i)||[])[1];
+    o.shape=o.shape||"";o.echo=o.echo||"";   // 이전 판독에 없던 특징은 지어내지 않음 (미기재)
+    if(/shadowing/i.test(t))o.post="shadowing";else if(/enhancement/i.test(t))o.post="enhancement";
+    if(/calcifi/i.test(t))o.calcIn=true;
+  }
+  if(kind==="cyst")o.ctype=/complicated/i.test(t)?"complicated cyst":/microcyst/i.test(t)?"clustered microcysts":/tiny|small|작은/i.test(t)?"tiny benign cyst":/benign/i.test(t)?"benign cyst":"simple cyst";
+  if(kind==="ln"){o.lnloc=/intramammary/i.test(t)?"intramammary":"axillary";o.lnchar=/metasta|suspicious/i.test(t)?"suspicious metastatic":/indeterminate/i.test(t)?"indeterminate":"benign";
+    const lv=[...t.matchAll(/level\s*(III|II|I)\b/gi)].map(m=>m[1].toUpperCase());
+    if(lv.length)o.level=lv.includes("I")&&lv.includes("II")?"I and II":lv[0]}
+  if(kind==="benign")o.bname=(t.match(/lipoma|skin nodule|fat necrosis|fat lobule|hamartoma|sebaceous cyst/i)||["lipoma"])[0].toLowerCase();
+  if(kind==="ectasia")o.ectAdj=/mild/i.test(t)?"mild":"";
+  if(/biopsy|조직\s*검사/i.test(t)){
+    if(/malignan|암\b|악성/i.test(t))o.bx="malig";
+    else if(/proven|확진|benign/i.test(t))o.bx="benign";
+    else if(/시행|done/i.test(t))o.bx="done";
+  }
+  // "benign ~" 으로 기술된 nodule 은 Category 2 로 (probably benign 은 자동 3). suspicious 표현은 아래 importReport 에서 이전 Category 로 맞춤
+  if(kind==="mass"&&!o.bx&&/\bbenign\b/i.test(t)&&!/probably\s+benign/i.test(t))o.cat="2";
+  o.susp=/suspicious|malignan|metasta/i.test(t)&&o.bx!=="benign";
+  const fm=t.match(/(\d+)\s*개월\s*(?:이상\s*)?(?:간\s*)?변화\s*없/)||t.match(/stable for (\d+)/i);
+  if(fm){const n=+fm[1];o.fu=n>=24?"24":n>=12?"12":n>=6?"6":""}
+  for(const k of ["shape","margin","echo"])if(o[k])o[k]=o[k].toLowerCase();
+  return o;
+}
+function splitReport(t){
+  const m=t.match(/={2,}\s*\[?\s*(?:Conclusion|결\s*론)\s*\]?\s*={2,}/i);
+  if(m)return[t.slice(0,m.index),t.slice(m.index+m[0].length)];
+  const n=t.search(/^\s*(?:Conclusion|결\s*론)\s*:/im);
+  return n>=0?[t.slice(0,n),t.slice(n)]:[t,""];
+}
+const nrm=s=>s.toLowerCase().replace(/,?\s*stable for [^.]*/,"").replace(/^no change of /,"").replace(/^(a|an) /,"").replace(/[^a-z0-9가-힣]/g,"");
+function showPrev(c,label,text){const p=c.querySelector("[data-o=prev]");const b=document.createElement("b"),d=document.createElement("div");
+  b.textContent=label+" ";d.append(b,text);p.appendChild(d)}
+function newCard(o){addIt(true);const c=$("its").lastElementChild;Object.keys(o).forEach(k=>setVal(c,k,o[k]));c.dataset.orig=o.size||"";c.dataset.susp=o.susp?"1":"";
+  if(o.orig)showPrev(c,"이전 소견:",o.orig);return c}
+// Reason 에서 수술 종류: partial/BCS → P, total/MRM/SSM → T
+const postOf=t=>{const m=t.match(/\b(right|left|rt|lt)\b\.?\s*(?:breast\s*)?(partial|BCS|total|MRM|SSM)/i);if(!m)return"";
+  return(/^r/i.test(m[1])?"R":"L")+(/partial|BCS/i.test(m[2])?"P":"T")};
+
+function importReport(){
+  const t=$("src").value.trim();
+  if(!t){$("impmsg").textContent="붙여넣은 내용이 없어요";return}
+  if(document.querySelector(".it")&&!confirm("현재 입력한 병변을 지우고 불러올까요?"))return;
+  const st={exam:/detailed|intercostal/i.test(t)?"D":"G",equip:/유방\s*전용\s*초음파/.test(t),comp:"",reason:"",post:"",norec:false,edema:false,redund:false,imp:"",intact:false,cdl:"",cat:"",rec:"",comment:""};
+  const cp=t.match(/(?:Tissue composition\s*:\s*)?(Hetero\w*|Homo\w*)\s+background echotexture(?:\s*-\s*(fat|fibroglandular))?/i);
+  if(cp)st.comp=/^hetero/i.test(cp[1])?"c":/fibro/i.test(cp[2]||"")?"b":"a";
+  const rm=t.match(/Reason\s*for\s*exam\s*:\s*([^\n]*)(?:\n\s*([^\n]+))?/i);
+  if(rm){st.reason=(rm[1].trim()||(rm[2]||"").trim());st.post=postOf(st.reason)}
+  const[fp,cpart]=splitReport(t);
+
+  // Findings: 줄 → 문장 단위 (병변 둘이 "…없으며 left breast에 …" 처럼 이어지면 나눔)
+  const L=[],X=[];
+  const ctx={side:"",loc:""};let prevLes=null,lastSide="";
+  // "op. site", "d/t" 같은 약어의 마침표에서 문장을 자르지 않도록 잠시 바꿔 둠
+  const protect=s=>s.replace(/\b(op|vs|e\.g|i\.e)\.\s+/gi,"$1.§");
+  const unprotect=s=>s.replace(/§/g," ");
+  const handle=(sen)=>{   // 문장 하나를 해석. 처리했으면 true
+    if(!sen||isNormal(sen))return !!sen;
+    const les=lesionOf(sen,ctx);
+    if(!les)return false;
+    if(/동측|ipsilateral/i.test(sen)&&lastSide)les.side=lastSide;
+    L.push(les);prevLes=les;ctx.side=les.side;lastSide=les.side;return true;
+  };
+  const skipLine=l=>/^<.*>$/.test(l)||/^Breast\s*(?:detailed\s*)?USG?\b/i.test(l)&&!/에/.test(l)||/^Reason\s*for\s*exam/i.test(l)||/background echotexture/i.test(l)||/유방\s*전용\s*초음파/.test(l)||/^\d{6,}$/.test(l)||/^[@\-=_v\[\]0-9]+$/.test(l)||(rm&&!rm[1].trim()&&l===(rm[2]||"").trim());
+  fp.split("\n").map(s=>s.trim()).filter(Boolean).forEach(raw=>{
+    const line=raw.replace(/^findings?\s*:\s*/i,"").trim();if(!line||skipLine(line))return;
+    if(/^(?:right|left)$/i.test(line))return;
+    prevLes=null;ctx.side="";ctx.loc="";
+    // Gynecomastia 는 "…hypoechoic lesion이 있음. Gynecomastia 소견에 합당함." 처럼 두 문장이어도 병변 하나
+    if(/gynecomastia/i.test(line)){const o={kind:"gyneco",side:sideOf(line)||"Right",chg:"u",orig:line};L.push(o);prevLes=null;return}
+    const sens=protect(line).split(/(?<=[.。])\s+/).map(unprotect).flatMap(s=>s.split(/(?<=(?:며|고|는데),?)\s+(?=(?:right|left|rt\.?|lt\.?|양측|both|(?:1[0-2]|[1-9])\s*H\b))/i));
+    for(let sen of sens){
+      sen=sen.trim();if(!sen)continue;
+      if(/recurrence|재발/i.test(sen)&&isNormal(sen)){st.norec=true;const s=sideOf(sen);if(!st.post&&s)st.post=s[0]+"P";
+        if(/lymph node/i.test(sen)){}prevLes=null;continue}
+      if(/postoperative change|수술\s*후\s*변화/i.test(sen)){
+        const s=sideOf(sen);if(s&&s!=="Both"){ctx.side=s;if(!st.post)st.post=s[0]+"P"}ctx.loc="op. site";
+        if(/edema|skin thickening/i.test(sen))st.edema=true;
+        prevLes=null;continue}
+      if(/redundant/i.test(sen)){st.redund=true;prevLes=null;continue}
+      if(/implant/i.test(sen)&&/삽입|insert|intact|state/i.test(sen)&&!kindOf(sen.replace(/implant\S*/gi,""))){const s=sideOf(sen);st.imp=s==="Right"?"R":s==="Left"?"L":"B";if(/intact/i.test(sen))st.intact=true;prevLes=null;continue}
+      if(/석회화\s*확인되지/.test(sen)){st.cdl="A";continue}
+      if(/abnormal calcifications or duct ectasia/i.test(sen)){st.cdl="B";continue}
+      if(/intercostal/i.test(sen)){st.exam="D";continue}
+      // "그 외 / 이외" 앞뒤를 나눠 봄: "…가 있으며 그 외 이상 없음"(뒤는 정상) / "이외에 left breast에 small cysts가 있음"(뒤가 병변)
+      const parts=sen.split(/,?\s*(?:그\s*외(?:의|에)?|그외|이외(?:에)?|나머지|otherwise)\s*/i).map(x=>x.trim()).filter(Boolean);
+      if(parts.every(x=>isNormal(x))){
+        if(/이전에|previously/i.test(sen))X.push(sen);   // "이전에 언급된 … 보이지 않음" 은 남겨 둠
+        prevLes=null;continue}
+      if(parts.filter(x=>!isNormal(x)).map(handle).some(Boolean))continue;
+      if(prevLes){
+        if(/biopsy|조직\s*검사/i.test(sen))prevLes.bx=/malignan|악성/i.test(sen)?"malig":/proven|확진/i.test(sen)?"benign":"done";
+        else if(!/(?:으로|로)\s*생각됨|의심됨|시사됨|likely|suggest|consistent with|합당함/i.test(sen))
+          prevLes.cm=(prevLes.cm?prevLes.cm+" ":"")+sen;
+        prevLes.orig+=" "+sen;continue}
+      X.push(sen);
+    }
+  });
+
+  // Conclusion
+  $("its").innerHTML="";
+  const cards=L.map(newCard),vals=cards.map(val),used=new Set(),XC=[],matched=[];
+  let last=null,inRec=false;
+  for(const raw of cpart.split("\n")){
+    let s=raw.trim();if(!s)continue;
+    if(/^<.*>$/.test(s)||/^=+.*=+$/.test(s)||/^[@\-=_v\[\]0-9]+$/.test(s))continue;
+    s=s.replace(/^(?:conclusion|결\s*론)\s*:?\s*/i,"").trim();if(!s)continue;
+    let m=s.match(/^(?:BI-?RADS\s*)?Ca?r?tegory\s*:?\s*(0|1|2|3|4\s*[abc]?|5|6)/i);
+    if(m){st.cat=m[1].replace(/\s/g,"").toLowerCase();inRec=false;continue}
+    m=s.match(/^Comment\s*:\s*(.*)$/i);if(m){st.comment=m[1].trim();inRec=false;continue}
+    m=s.match(/^(?:Rec\b[\s.):;]*|Recommendation\s*:?)\s*(.*)$/i);if(m){st.rec=m[1].trim();inRec=true;continue}
+    if(inRec){st.rec+=(st.rec?" ":"")+s;continue}
+    m=s.match(/^-+>\s*(.*)$/);
+    if(m){
+      if(/biopsy (?:was )?done/i.test(m[1])){if(last)setVal(last,"bx","done");continue}
+      if(last){const ro=last.querySelector('[data-k="ro"]');ro.value=ro.value?ro.value+" ; "+m[1]:m[1]}else XC.push(s);
+      continue}
+    s=s.replace(/^\d+\.\s*/,"");
+    // "Core needle biopsy was done for a 1.8cm … mass" → biopsy 시행 표시 + 병변 문장만 남김
+    let bxDone=false;
+    if(/biopsy (?:was )?done for/i.test(s)){bxDone=true;s=s.replace(/^.*?biopsy (?:was )?done for\s*/i,"");s=s[0].toUpperCase()+s.slice(1)}
+    if(/^(?:S\/P|Postoperative change|Negative|Intact implant)/i.test(s)||/no evidence of (?:local |tumor )*(?:recurrence|malignancy)/i.test(s)){
+      if(/recurrence/i.test(s))st.norec=true;last=null;continue}
+    if(/^Limited evaluation/i.test(s)){if(/redundant/i.test(s))st.redund=true;else st.edema=true;last=null;continue}
+    if((/^no (?!change|interval)|^unremarkable|^정상/i.test(s)||isNormal(s))&&!/\d\s*cm/.test(s)){last=null;continue}
+    const kd=kindOf(s),sd=sideOf(s);
+    // 같은 종류·같은 쪽 카드 중에서 이전 소견 문장과 단어가 가장 많이 겹치는 카드에 연결
+    const words=x=>new Set(x.toLowerCase().match(/[a-z]+|\d+(?:\.\d+)?|\d+h/g)||[]);
+    const sw=words(s);
+    let ci=-1,best=-1;
+    vals.forEach((x,i)=>{if(used.has(i)||x.kind!==kd||(sd&&x.side!==sd))return;
+      const ow=words(cards[i].querySelector("[data-o=prev]").textContent);let n=0;sw.forEach(w=>{if(ow.has(w))n++});
+      if(n>best){best=n;ci=i}});
+    if(ci<0){XC.push(s);last=null;continue}
+    used.add(ci);last=cards[ci];showPrev(last,"이전 결론:",s);
+    if(bxDone)setVal(last,"bx","done");
+    if(/suspicious|malignan|metasta/i.test(s))last.dataset.susp="1";
+    matched.push([last,s]);
+  }
+
+  $("exam").value=st.exam;$("comp").value=st.comp;   // 장비 상용구는 불러오기와 관계없이 현재 설정 유지
+  if(st.reason){const ri=REASONS.findIndex(r=>r[0].toLowerCase().replace(/\W/g,"")===st.reason.toLowerCase().replace(/\W/g,""));$("reason").value=st.reason;$("rsel").value=ri>=0?String(ri):"x"}
+  $("post").value=st.post;$("norec").checked=st.norec||!!st.post;$("edema").checked=st.edema;$("redund").checked=st.redund;
+  $("imp").value=st.imp;$("intact").checked=st.intact||!st.imp;
+  if(st.cdl)$("cdl").value=st.cdl;
+  $("cat").value="auto";
+  // 이전에 이미 Category 2 였던 판독이면, Category 3 형태 병변도 benign(2)으로 둠 (기간은 모르므로 "24개월" 이라고 쓰지 않음)
+  if(st.cat==="2")cards.forEach(c=>{const v=val(c);if(v.cat==="auto"&&!v.fu&&build(Object.assign({},v,{fu:""})).cat==="3")setVal(c,"cat","2")});
+  // 이전 판독에서 suspicious/malignant 로 기술한 병변은 이전 Category(4a 이상)보다 낮게 자동 판정되지 않게 맞춤
+  if(RANK.indexOf(st.cat)>=RANK.indexOf("4a"))cards.forEach(c=>{if(c.dataset.susp!=="1")return;const v=val(c);
+    if(v.cat==="auto"&&RANK.indexOf(build(v).cat)<RANK.indexOf(st.cat))setVal(c,"cat",st.cat)});
+  // 자동으로 만든 결론이 이전 결론과 표현이 다르면 이전 결론 문장을 그대로 씀 ("No change of …")
+  matched.forEach(([c,s])=>{
+    const gen=build(Object.assign(val(c),{chg:"u",ro:"",conc:""})).c.split("\n")[0];
+    if(nrm(gen)!==nrm(s.replace(/^(?:Interval\s+(?:increase|decrease)(?:\s+in\s+size)?\s+of|New)\s+/i,"").replace(/\s*\([^)]*->[^)]*\)/,"")))
+      setVal(c,"conc",/^No change/i.test(s)?s:"No change of "+s.replace(/^([A-Z])(?=[a-z\s])/,x=>x.toLowerCase()));
+  });
+  let stepped=0;
+  if(st.cat==="3")cards.forEach(c=>{const v=val(c);if(build(Object.assign({},v,{fu:""})).cat!=="3")return;
+    const nx={"":"6","6":"12","12":"24"}[v.fu];if(nx){setVal(c,"fu",nx);stepped++}});
+  $("rec").value=st.rec&&!AUTO_RECS.includes(st.rec)&&!/routine mammography/i.test(st.rec)?st.rec:"";
+  $("comment").value=st.comment;
+  $("extraF").value=X.join("\n");$("extraC").value=XC.join("\n");
+  if(X.length||XC.length)$("xtra").open=true;
+  upd();
+  const now=$("catShow").textContent.replace(/[→\s]/g,"");
+  $("impmsg").textContent=`병변 ${cards.length}개, 기타 Findings ${X.length}줄, 기타 Conclusion ${XC.length}줄을 불러왔어요.`+
+    (st.cat?` 이전 Category ${st.cat} → 지금 자동 ${now}${st.cat!==now?" (다름, 확인 필요)":""}.`:"")+
+    (stepped?` Category 3 병변 ${stepped}개의 추적 단계를 한 단계 올렸어요 (기간 확인 필요).`:"")+" 결과를 꼭 확인하세요.";
+}
+function clearSrc(){$("src").value="";$("impmsg").textContent="";$("src").focus()}
+// 불러온 병변의 크기를 고치면 변화(증가/감소)와 이전 크기를 자동으로 채움
+function onSize(e){
+  const el=e.target;if(!el.matches||!el.matches('[data-k="size"]'))return;
+  const c=el.closest(".it"),orig=parseFloat(c.dataset.orig);if(!orig)return;
+  const ch=c.querySelector('[data-k="chg"]');if(!["u","i","d"].includes(ch.value))return;
+  const cur=parseFloat(el.value),pv=c.querySelector('[data-k="prev"]');
+  if(!cur||cur===orig){ch.value="u";pv.value=""}else{ch.value=cur>orig?"i":"d";pv.value=orig}
+}
+function onChg(e){
+  const el=e.target;if(!el.matches||!el.matches('[data-k="chg"]'))return;
+  const c=el.closest(".it"),orig=c.dataset.orig,pv=c.querySelector('[data-k="prev"]');
+  if((el.value==="i"||el.value==="d")&&!pv.value&&orig)pv.value=orig;
+}
+
+function copyOut(){
+  const t=$("out");t.select();
+  (navigator.clipboard?navigator.clipboard.writeText(t.value):Promise.reject()).catch(()=>document.execCommand("copy"));
+  $("msg").textContent="복사됨";setTimeout(()=>$("msg").textContent="",1500);
+}
+// 판독문 칸을 직접 고칠 때는 다시 생성하지 않음 (입력 칸을 바꾸면 다시 생성됨)
+const skip=e=>e.target.id==="out"||(e.target.closest&&e.target.closest("#store,#impbox"));
+document.addEventListener("input",e=>{if(skip(e))return;onSize(e);upd()});
+document.addEventListener("change",e=>{if(skip(e))return;onChg(e);upd()});
+upd();
+
+Store.init({module:"breast-us",out:"out",fields:{reason:"Reason",rec:"Rec",comment:"Comment"},
+  onUse:body=>{$("src").value=body;$("impbox").open=true;importReport()}});
+</script>
+</body>
+</html>
