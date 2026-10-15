@@ -37,6 +37,7 @@ button.p{background:var(--acc);border-color:var(--acc);color:#fff}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js"></script>
 <script src="../lib/db.js"></script>
+<script src="../lib/store.js"></script>
 </head>
 <body>
 <main>
@@ -51,22 +52,7 @@ button.p{background:var(--acc);border-color:var(--acc);color:#fff}
     <div class="row"><button class="p" onclick="importReport()">불러오기</button><button onclick="clearSrc()">지우기</button><span id="impmsg" class="sub"></span></div>
   </details>
 
-  <details class="card" id="store">
-    <summary>내 저장소 (템플릿 · 판독문 기록 · 자주 쓰는 문구)</summary>
-    <p class="sub" id="stmsg"></p>
-    <div id="stbody" hidden>
-      <div class="row"><input type="text" id="sttitle" placeholder="제목 (환자 정보 넣지 말 것, 예: 양측 결절 F/U)">
-        <select id="stkind"><option value="template">템플릿으로</option><option value="report">기록으로</option></select>
-        <button class="p" onclick="saveReport()">현재 판독문 저장</button></div>
-      <div class="row"><label>목록</label><select id="stview" onchange="loadList()"><option value="template">템플릿</option><option value="report">판독문 기록</option></select></div>
-      <div id="stlist"></div>
-      <h2>자주 쓰는 문구</h2>
-      <p class="sub">저장한 문구는 Reason, Comment, Rec 칸을 클릭하면 추천 목록에 나와요.</p>
-      <div class="row"><select id="plfield"><option value="reason">Reason</option><option value="comment">Comment</option><option value="rec">Rec</option></select>
-        <input type="text" id="pltext" placeholder="문구"><button onclick="addPhrase()">추가</button></div>
-      <div id="pllist"></div>
-    </div>
-  </details>
+  <details class="card" id="store"></details>
 
   <div class="card">
     <div class="row"><label>Reason</label><select id="rsel"></select><input type="text" id="reason" value="Screening" list="pl-reason"></div>
@@ -100,7 +86,7 @@ button.p{background:var(--acc);border-color:var(--acc);color:#fff}
 </section>
 </main>
 <datalist id="regs"><option>upper pole</option><option>mid portion</option><option>lower pole</option><option>lower portion</option><option>mid to lower portion</option><option>upper pole posterior</option><option>paraisthmic area</option><option>retrotracheal area</option><option>Op. bed</option></datalist>
-<datalist id="pl-reason"></datalist><datalist id="pl-comment"></datalist><datalist id="pl-rec"></datalist>
+
 <script>
 const $=id=>document.getElementById(id);
 const REASONS=[["Screening",""],["F/U for US abnormality.",""],["Outside US abnormality.",""],["Abnormal screening US.",""],["Screening, hyperparathyroidism",""],["PET-CT detected thyroid abnormality, a patient with hypercalcemia",""],["Postop., S/P Total thyroidectomy.","T"],["Post op., S/P Total thyroidectomy for Papillary carcinoma.","T"],["S/P Right lobectomy for malignancy.","R"],["S/P Left lobectomy for malignancy.","L"]];
@@ -376,50 +362,9 @@ function copyOut(){
   (navigator.clipboard?navigator.clipboard.writeText(t.value):Promise.reject()).catch(()=>document.execCommand("copy"));
   $("msg").textContent="복사됨";setTimeout(()=>$("msg").textContent="",1500);
 }
-/* ---------- 내 저장소 (Supabase) ---------- */
-const MOD="thyroid-us";
-const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
-const stMsg=t=>$("stmsg").textContent=t;
-const stErr=e=>stMsg(/items/.test(e.message)&&/exist|schema cache/i.test(e.message)?"저장소 테이블이 아직 없어요. supabase/schema.sql 을 먼저 실행하세요.":"오류: "+e.message);
-let LIST=[];
-async function initStore(){
-  if(!window.RDB){stMsg("저장소에 연결할 수 없어요 (인터넷 확인).");return}
-  if(!await RDB.user()){   // 이 파일을 직접 열었을 때도 로그인 필요
-    document.querySelector("main").innerHTML=`<section class="card"><h1>로그인이 필요해요</h1><p class="sub">판독지는 로그인 후 사용할 수 있어요.</p><a href="../index.html#login" target="_top">로그인 / 회원가입하러 가기</a></section>`;
-    return}
-  $("stbody").hidden=false;stMsg("");
-  loadList();loadPhrases();
-}
-async function loadList(){
-  try{LIST=await RDB.list(MOD,$("stview").value)}catch(e){return stErr(e)}
-  $("stlist").innerHTML=LIST.length?LIST.map((r,i)=>`<div class="row"><span style="flex:1">${esc(r.title||"(제목 없음)")} <span class="sub">${new Date(r.created_at).toLocaleString("ko-KR",{dateStyle:"short",timeStyle:"short"})}</span></span>
-    <button onclick="useItem(${i})">불러오기</button><button onclick="copyItem(${i})">복사</button><button class="x" style="margin:0" onclick="delItem('${r.id}',loadList)">삭제</button></div>`).join(""):`<p class="sub">저장된 항목이 없어요.</p>`;
-}
-async function saveReport(){
-  const title=$("sttitle").value.trim(),kind=$("stkind").value;
-  if(!title){stMsg("제목을 입력하세요.");$("sttitle").focus();return}
-  try{await RDB.add({module:MOD,kind,title,body:$("out").value})}catch(e){return stErr(e)}
-  $("sttitle").value="";stMsg(`"${title}" 저장됨`);$("stview").value=kind;loadList();
-}
-function useItem(i){$("src").value=LIST[i].body;$("imp").open=true;importReport()}
-function copyItem(i){navigator.clipboard.writeText(LIST[i].body).then(()=>stMsg("복사됨"),()=>stMsg("복사 실패"))}
-async function delItem(id,after){
-  if(!confirm("삭제할까요? 되돌릴 수 없어요."))return;
-  try{await RDB.remove(id)}catch(e){return stErr(e)}
-  after();
-}
-async function loadPhrases(){
-  let ps;try{ps=await RDB.list(MOD,"phrase")}catch(e){return stErr(e)}
-  ["reason","comment","rec"].forEach(f=>$("pl-"+f).innerHTML=ps.filter(p=>p.field===f).map(p=>`<option value="${esc(p.body)}">`).join(""));
-  const name={reason:"Reason",comment:"Comment",rec:"Rec"};
-  $("pllist").innerHTML=ps.map(p=>`<div class="row"><span class="sub" style="min-width:64px">${name[p.field]||p.field}</span><span style="flex:1">${esc(p.body)}</span><button class="x" style="margin:0" onclick="delItem('${p.id}',loadPhrases)">삭제</button></div>`).join("");
-}
-async function addPhrase(){
-  const body=$("pltext").value.trim();if(!body)return;
-  try{await RDB.add({module:MOD,kind:"phrase",field:$("plfield").value,body})}catch(e){return stErr(e)}
-  $("pltext").value="";loadPhrases();
-}
-initStore();
+/* ---------- 내 저장소 (lib/store.js) ---------- */
+Store.init({module:"thyroid-us",out:"out",fields:{reason:"Reason",comment:"Comment",rec:"Rec"},
+  onUse:body=>{$("src").value=body;$("imp").open=true;importReport()}});
 
 document.addEventListener("input",e=>{onSize(e);upd()});
 document.addEventListener("change",e=>{onChg(e);upd()});
