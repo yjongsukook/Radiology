@@ -40,6 +40,7 @@ button.p{background:var(--acc);border-color:var(--acc);color:#fff}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js"></script>
 <script src="../lib/db.js"></script>
 <script src="../lib/store.js"></script>
+<script src="../lib/voice.js"></script>
 </head>
 <body>
 <main>
@@ -299,7 +300,7 @@ const nk=s=>s.toLowerCase().replace(/[^a-z0-9가-힣]/g,"");
 // 장기 칸: 문구가 고정 문구로 시작하면 그 항목 + 나머지는 덧붙일 문구, 아니면 직접 입력
 function setOrg(k,text){
   const o=ORG[k];text=text.trim();
-  if(o.size){const m=text.match(/\((\d+(?:\.\d+)?)\s*cm\)/);if(m){$(k+"Sz").value=m[1];text=text.replace(m[0],"").replace(/\s{2,}/g," ").trim()}}
+  if(o.size){const m=text.match(/\((\d+(?:\.\d+)?)\s*cm\)/)||text.match(/(\d+(?:\.\d+)?)\s*cm/);if(m){$(k+"Sz").value=m[1];text=text.replace(m[0],"").replace(/\s{2,}/g," ").trim()}}
   let best=-1,bl=0;
   o.presets.forEach((p,i)=>{const a=nk(p[0]);if(a&&nk(text).startsWith(a)&&a.length>bl){best=i;bl=a.length}});
   if(best<0&&o.presets.some((p,i)=>p[1]===null&&isNormal(text)&&(best=i,true))){}
@@ -327,8 +328,8 @@ function lesOf(t){
 }
 function showPrev(c,label,text){const p=c.querySelector("[data-o=prev]");const b=document.createElement("b"),d=document.createElement("div");
   b.textContent=label+" ";d.append(b,text);p.appendChild(d)}
-function newCard(o){addIt(true);const c=$("its").lastElementChild;Object.keys(o).forEach(k=>setVal(c,k,o[k]));c.dataset.orig=o.size||"";
-  if(o.orig)showPrev(c,"이전 소견:",o.orig);return c}
+function newCard(o){addIt(true);const c=$("its").lastElementChild;Object.keys(o).forEach(k=>setVal(c,k,o[k]));c.dataset.orig=o.size||"";c.dataset.src=o.orig||o.src||"";
+  if(o.orig)showPrev(c,window.Voice&&Voice.fresh()?"받아쓴 문장:":"이전 소견:",o.orig);return c}
 function resetForm(){
   ["liver","ihd","cbd","panc","spl"].forEach(k=>{$(k).value="0";$(k+"Txt").value="";$(k+"Add").value="";if(ORG[k].size)$(k+"Sz").value=""});
   ["gb-chole","gb-contr","gb-sludge","gb-stone","gb-stoneM","gb-polyp","gb-polypM","asc"].forEach(id=>$(id).checked=false);
@@ -371,7 +372,8 @@ function importReport(){
   const L=[],X=[],ET=[];
   const lines=fp.split("\n").map(s=>s.replace(/\s+$/,"")).filter(s=>s.trim()&&!/^\s*<.*>\s*$/.test(s));
   const listStyle=lines.some(l=>/^\s*간\s*:/.test(l));
-  $("style").value=listStyle?"list":"text";
+  const dictated=window.Voice&&Voice.fresh();
+  if(!dictated)$("style").value=listStyle?"list":"text";   // 받아쓴 내용은 지금 고른 양식 그대로
   if(listStyle){
     let cur="";
     const KEY=[["liver",/^\s*간\s*:\s*/],["gb",/^\s*담낭\s*:\s*/],["ihd",/^\s*간내\s*담관\s*:\s*/],["cbd",/^\s*간외\s*담관\s*:\s*/],["panc",/^\s*췌장\s*:\s*/],["spl",/^\s*비장(?:종대)?\s*:\s*/],["etc",/^\s*기타\s*:\s*/]];
@@ -394,7 +396,7 @@ function importReport(){
     }
   }else{
     // 문장형: 문장마다 장기 단어로 나눔
-    const sens=lines.join(" ").replace(/\b(op|d\/t)\.\s+/gi,"$1.§").split(/(?<=[.。])\s+/).map(s=>s.replace(/§/g," ").trim()).filter(Boolean);
+    const sens=lines.flatMap(l=>l.replace(/\b(op|d\/t)\.\s+/gi,"$1.§").split(/(?<=[.。])\s+/)).map(s=>s.replace(/§/g," ").trim()).filter(Boolean);
     for(const s of sens){
       if(/cholecystectomy/i.test(s)){$("gb-chole").checked=true;continue}
       if(/^op\.?\s*site/i.test(s)&&isNormal(s))continue;
@@ -404,7 +406,7 @@ function importReport(){
         continue}
       if(/focal lesion/i.test(s)&&isNormal(s))continue;
       if(/pancrea/i.test(s)){if(!isNormal(s))setOrg("panc",s);continue}
-      if(/spleen|비장/i.test(s)){if(!isNormal(s))setOrg("spl",s);continue}
+      if(/splen|비장/i.test(s)){if(!isNormal(s))setOrg("spl",s);continue}
       if(/\bGB\b|gallbladder|담낭/i.test(s)){setGB(s);continue}
       if(/IHD|CBD|bile duct|담관/i.test(s)){if(!isNormal(s)){if(/IHD/i.test(s))setOrg("ihd",s);if(/CBD/i.test(s))setOrg("cbd",s.replace(/^.*?(CBD)/i,"$1"))}continue}
       if(/ascites|pleural effusion/i.test(s)){setEtc(s,ET);continue}
@@ -414,6 +416,7 @@ function importReport(){
   }
   $("etcTxt").value=ET.join("\n");
   const cards=L.map(newCard);
+  if(window.Voice&&Voice.fresh())cards.forEach(c=>setVal(c,"chg",Voice.chgOf(c.dataset.src)));   // 받아쓴 새 검사: "변화 없음"으로 시작하지 않음
   upd();
   // 결론: 자동으로 만든 결론에 이미 들어 있는 내용은 건너뛰고, 간 병변 결론은 카드에 "이전 결론"으로 표시
   const gen=nk($("out").value.split("====== [Conclusion] ======")[1]||"");
@@ -458,6 +461,7 @@ document.addEventListener("input",e=>{if(skip(e))return;onSize(e);upd()});
 document.addEventListener("change",e=>{if(skip(e))return;onChg(e);upd()});
 upd();
 
+Voice.attach({module:"abd"});
 Store.init({module:"abd-us",out:"out",fields:{rec:"Rec",comment:"Comment"},
   onUse:body=>{$("src").value=body;$("impbox").open=true;importReport()}});
 </script>

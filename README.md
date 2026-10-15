@@ -46,3 +46,11 @@
 3. 모든 판독지에 공통으로 넣는 것 (`lib/store.js`)
    - `<details class="card" id="store"></details>`와 `Store.init({...})`: 로그인 확인과 내 저장소
    - Report의 복사 버튼 옆에 `<button onclick="Store.reset()">초기화</button>`
+   - 음성 받아쓰기 (`lib/voice.js`): `<script src="../lib/voice.js">` 와 `Voice.attach({module:"…"})`. 판독지 용어 사전은 voice.js 의 `EXTRA` 에 추가
+
+## 음성 받아쓰기
+
+"기존 판독문 불러오기" 칸의 🎤 받아쓰기를 누르고 핵심 키워드만 말하면 판독문 용어로 바꿔 한 줄씩 넣습니다.
+예: "우측 3시 유두 2 일 점 이 오벌 하이포에코익 노듈" → `Right 3H, 2cm 거리 1.2cm oval hypoechoic nodule`
+확인한 뒤 **불러오기**를 누르면 입력 칸이 채워집니다. Chrome/Edge에서, 사이트 주소(https)로 열었을 때만 동작합니다.
+음성은 브라우저 음성인식(Google)으로 처리되므로 환자 식별 정보는 말하지 마세요.

@@ -47,6 +47,7 @@ button.p{background:var(--acc);border-color:var(--acc);color:#fff}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js"></script>
 <script src="../lib/db.js"></script>
 <script src="../lib/store.js"></script>
+<script src="../lib/voice.js"></script>
 </head>
 <body>
 <main>
@@ -388,8 +389,8 @@ function splitReport(t){
 const nrm=s=>s.toLowerCase().replace(/,?\s*stable for [^.]*/,"").replace(/^no change of /,"").replace(/^(a|an) /,"").replace(/[^a-z0-9가-힣]/g,"");
 function showPrev(c,label,text){const p=c.querySelector("[data-o=prev]");const b=document.createElement("b"),d=document.createElement("div");
   b.textContent=label+" ";d.append(b,text);p.appendChild(d)}
-function newCard(o){addIt(true);const c=$("its").lastElementChild;Object.keys(o).forEach(k=>setVal(c,k,o[k]));c.dataset.orig=o.size||"";c.dataset.susp=o.susp?"1":"";
-  if(o.orig)showPrev(c,"이전 소견:",o.orig);return c}
+function newCard(o){addIt(true);const c=$("its").lastElementChild;Object.keys(o).forEach(k=>setVal(c,k,o[k]));c.dataset.orig=o.size||"";c.dataset.src=o.orig||o.src||"";c.dataset.susp=o.susp?"1":"";
+  if(o.orig)showPrev(c,window.Voice&&Voice.fresh()?"받아쓴 문장:":"이전 소견:",o.orig);return c}
 // Reason 에서 수술 종류: partial/BCS → P, total/MRM/SSM → T
 const postOf=t=>{const m=t.match(/\b(right|left|rt|lt)\b\.?\s*(?:breast\s*)?(partial|BCS|total|MRM|SSM)/i);if(!m)return"";
   return(/^r/i.test(m[1])?"R":"L")+(/partial|BCS/i.test(m[2])?"P":"T")};
@@ -457,6 +458,7 @@ function importReport(){
   // Conclusion
   $("its").innerHTML="";
   const cards=L.map(newCard),vals=cards.map(val),used=new Set(),XC=[],matched=[];
+  if(window.Voice&&Voice.fresh())cards.forEach(c=>setVal(c,"chg",Voice.chgOf(c.dataset.src)));   // 받아쓴 새 검사: "변화 없음"으로 시작하지 않음
   let last=null,inRec=false;
   for(const raw of cpart.split("\n")){
     let s=raw.trim();if(!s)continue;
@@ -551,6 +553,7 @@ document.addEventListener("input",e=>{if(skip(e))return;onSize(e);upd()});
 document.addEventListener("change",e=>{if(skip(e))return;onChg(e);upd()});
 upd();
 
+Voice.attach({module:"breast"});
 Store.init({module:"breast-us",out:"out",fields:{reason:"Reason",rec:"Rec",comment:"Comment"},
   onUse:body=>{$("src").value=body;$("impbox").open=true;importReport()}});
 </script>

@@ -39,6 +39,7 @@ button.p{background:var(--acc);border-color:var(--acc);color:#fff}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js"></script>
 <script src="../lib/db.js"></script>
 <script src="../lib/store.js"></script>
+<script src="../lib/voice.js"></script>
 </head>
 <body>
 <main>
@@ -273,6 +274,7 @@ function parseLine(line,st){
   const out=[];let prev=null;
   raws.forEach(r=>{if(!r.desc)return;prev=mk(r.pre,r.desc,r.size,prev);out.push(prev)});
   if(!out.length)return null;
+  out.forEach(o=>o.src=line);
   if(out.length===1){const ss=line.split(/(?<=\.)\s+/);const cm=[tailOf(ss[0]),...ss.slice(1)].filter(Boolean).join(" ");if(cm)out[0].cm=cm}
   return out;
 }
@@ -325,7 +327,7 @@ function parseConclusion(txt,st,cards){
   }
   return{XC,tail};
 }
-function newCard(o){addIt(true);const c=$("its").lastElementChild;Object.keys(o).forEach(k=>setVal(c,k,o[k]));c.dataset.orig=o.size||"";return c}
+function newCard(o){addIt(true);const c=$("its").lastElementChild;Object.keys(o).forEach(k=>setVal(c,k,o[k]));c.dataset.orig=o.size||"";c.dataset.src=o.orig||o.src||"";return c}
 function importReport(){
   const t=$("src").value.trim();
   if(!t){$("impmsg").textContent="붙여넣은 내용이 없어요";return}
@@ -339,6 +341,7 @@ function importReport(){
   fl.forEach(line=>{const r=parseLine(line,st);if(r===null)X.push(line);else L.push(...r)});
   $("its").innerHTML="";
   const cards=L.map(newCard);
+  if(window.Voice&&Voice.fresh())cards.forEach(c=>setVal(c,"chg",Voice.chgOf(c.dataset.src)));   // 받아쓴 새 검사: "변화 없음"으로 시작하지 않음
   const{XC,tail}=parseConclusion(cp,st,cards);
   const nk=s=>s.toLowerCase().replace(/[.\s]+$/,"").replace(/\s+/g," ");
   if(st.reason){const ri=REASONS.findIndex(r=>nk(r[0])===nk(st.reason));$("reason").value=st.reason;$("rsel").value=ri>=0?String(ri):"x"}
@@ -368,6 +371,7 @@ function copyOut(){
   $("msg").textContent="복사됨";setTimeout(()=>$("msg").textContent="",1500);
 }
 /* ---------- 내 저장소 (lib/store.js) ---------- */
+Voice.attach({module:"thyroid"});
 Store.init({module:"thyroid-us",out:"out",fields:{reason:"Reason",comment:"Comment",rec:"Rec"},
   onUse:body=>{$("src").value=body;$("imp").open=true;importReport()}});
 
