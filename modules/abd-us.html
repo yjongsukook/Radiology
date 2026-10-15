@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>상복부 초음파 판독문 생성기</title>
+<style>
+:root{--bg:#f5f6f4;--card:#fff;--ink:#1d2421;--mute:#66706b;--line:#d5dbd7;--acc:#1f6f5c;--warn:#a8452a}
+@media(prefers-color-scheme:dark){:root{--bg:#161a18;--card:#202623;--ink:#e6ebe8;--mute:#93a09a;--line:#34403b;--acc:#58b9a0;--warn:#e08a6c}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 "Pretendard","Noto Sans KR",system-ui,sans-serif}
+main{max-width:1150px;margin:0 auto;padding:16px;display:grid;grid-template-columns:1.1fr .9fr;gap:16px}
+@media(max-width:860px){main{grid-template-columns:1fr}}
+h1{font-size:18px;margin:0 0 4px}h2{font-size:14px;margin:14px 0 6px}
+.sub{color:var(--mute);font-size:12px;margin:0 0 8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:10px;margin-bottom:10px}
+summary{cursor:pointer;font-weight:600}
+.row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:4px 0}
+label{font-size:12px;color:var(--mute)}
+.org{min-width:64px;font-weight:600;font-size:13px;color:var(--ink)}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:4px 6px;max-width:100%}
+input[type=number]{width:78px}input[type=text]{flex:1;min-width:140px}
+textarea.s{width:100%;min-height:64px;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace}
+.ck{display:inline-flex;gap:4px;align-items:center;color:var(--ink);font-size:13px}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:4px;padding:5px 10px}
+button.p{background:var(--acc);border-color:var(--acc);color:#fff}
+:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.k{font-weight:600;color:var(--acc)}
+#out{width:100%;min-height:480px;font:13px/1.55 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap}
+.x{margin-left:auto;color:var(--warn)}
+.orgrow{border-top:1px solid var(--line);padding-top:6px;margin-top:6px}
+.orgrow:first-child{border-top:0;margin-top:0;padding-top:0}
+[data-custom=""] .g-txt{display:none}
+.it:not([data-chg=i]):not([data-chg=d]) .g-prev{display:none}
+.it:not([data-loc=custom]) .g-loctxt{display:none}
+.prev{font-size:12px;color:var(--mute);background:var(--bg);border-left:3px solid var(--acc);border-radius:3px;padding:4px 8px;margin:6px 0;white-space:pre-wrap}
+.prev:empty{display:none}
+.prev b{color:var(--ink);font-weight:600}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js"></script>
+<script src="../lib/db.js"></script>
+<script src="../lib/store.js"></script>
+</head>
+<body>
+<main>
+<section>
+  <h1>상복부 초음파 판독문 생성기</h1>
+  <p class="sub">Liver · GB · bile duct · pancreas · spleen. 장기별로 고르면 판독문과 결론이 만들어져요. 환자 정보는 입력하지 마세요. 문구는 직접 검수해서 사용하세요.</p>
+
+  <details class="card" id="impbox" open>
+    <summary>기존 판독문 불러오기 (F/U용)</summary>
+    <p class="sub">이전 report를 그대로 붙여넣고 불러오기를 누르면 장기별 칸과 간 병변 카드로 바뀌어요. 불러온 간 병변은 "변화 없음"으로 시작하고, 크기를 고치면 자동으로 크기 증가/감소와 이전 크기가 채워져요.</p>
+    <textarea id="src" class="s" style="min-height:140px" placeholder="기존 report 붙여넣기"></textarea>
+    <div class="row"><button class="p" onclick="importReport()">불러오기</button><button onclick="clearSrc()">지우기</button><span id="impmsg" class="sub"></span></div>
+  </details>
+
+  <details class="card" id="store"></details>
+
+  <div class="card">
+    <div class="row"><label>양식</label>
+      <select id="style"><option value="list">항목형 (간 : …)</option><option value="text">문장형</option></select>
+      <label>머리말</label>
+      <select id="head"><option value="">(없음)</option><option>&lt;UPPER ABDOMEN US&gt;</option><option>&lt;LIVER US&gt;</option></select></div>
+  </div>
+
+  <div class="card" id="orgs"></div>
+
+  <h2>간 병변 (없으면 "관찰되는 간종괴 없음")</h2><div id="its"></div>
+  <button onclick="addIt()">+ 간 병변 추가</button>
+
+  <div class="card" style="margin-top:12px">
+    <div class="row"><label>Rec</label><input type="text" id="rec" list="pl-rec" placeholder="선택 (예: F/U US in 6 months.)"></div>
+    <div class="row"><label>Comment</label><input type="text" id="comment" list="pl-comment" placeholder="선택"></div>
+  </div>
+
+  <details class="card" id="xtra">
+    <summary>기타 줄 (불러오기에서 해석하지 못한 줄, 그대로 출력)</summary>
+    <label>Findings</label><textarea id="extraF" class="s"></textarea>
+    <label>Conclusion</label><textarea id="extraC" class="s"></textarea>
+  </details>
+</section>
+<section>
+  <h2 style="margin-top:0">Report</h2>
+  <textarea id="out" spellcheck="false"></textarea>
+  <div class="row"><button class="p" onclick="copyOut()">복사</button><button onclick="Store.reset()">초기화</button><span id="msg" class="sub"></span></div>
+</section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+const opt=a=>a.map(v=>Array.isArray(v)?`<option value="${esc(v[0])}">${esc(v[1])}</option>`:`<option>${esc(v)}</option>`).join("");
+const IND="       ";   // 항목형에서 둘째 줄 들여쓰기
+
+/* 장기별 고정 문구: [항목형 문구, 결론 문구(정상이면 null), 문장형 문구] */
+const ORG={
+  liver:{label:"간",presets:[
+    ["정상 간실질 에코",null,"Liver의 echogenicity가 정상 범위임."],
+    ["Fatty liver, mild degree.","Fatty liver, mild degree.","Liver의 echogenicity가 증가되어 있어 fatty liver (mild degree)로 생각됨."],
+    ["Fatty liver, moderate degree.","Fatty liver, moderate degree.","Liver의 echogenicity가 증가되어 있어 fatty liver (moderate degree)로 생각됨."],
+    ["Fatty liver, severe degree.","Fatty liver, severe degree.","Liver의 echogenicity가 증가되어 있어 fatty liver (severe degree)로 생각됨."],
+    ["Coarse liver echotexture, suggesting chronic liver disease.","Chronic liver disease.","Liver의 echotexture가 coarse하여 chronic liver disease가 의심됨."],
+    ["Liver cirrhosis.","Liver cirrhosis.","Liver cirrhosis 소견 있음."]]},
+  ihd:{label:"간내담관",presets:[
+    ["확장 없음",null,""],
+    ["Mild IHD dilatation","Mild IHD dilatation","Mild IHD dilatation 있음."],
+    ["Diffuse IHD dilatation in both hemilivers","Diffuse IHD dilatation","양측 hemiliver에 diffuse IHD dilatation 있음."]]},
+  cbd:{label:"간외담관",size:"CBD 직경",presets:[
+    ["확장 없음",null,""],
+    ["CBD dilatation","CBD dilatation","CBD dilatation 있음."]]},
+  panc:{label:"췌장",presets:[
+    ["초음파상 보이는 췌장에 특이 사항 없음",null,"Visible pancreas에 특이 소견 보이지 않음."],
+    ["Poor visualization of pancreas due to bowel gas.","Poor visualization of pancreas d/t bowel gas.","Bowel gas로 pancreas 관찰이 제한적임."],
+    ["Pancreatic duct dilatation","Pancreatic duct dilatation","Pancreatic duct dilatation 있음."]]},
+  spl:{label:"비장종대",size:"비장 크기",presets:[
+    ["없음",null,"Spleen에 특이 소견 없고 정상 크기임."],
+    ["Splenomegaly","Splenomegaly","Splenomegaly 있음."],
+    ["Unassessable due to poor sonic window and inability of cooperation","Unassessable spleen.","Poor sonic window와 협조 불가로 spleen 평가가 어려움."]]}
+};
+const GB_WALL=["","Diffuse smooth wall GB thickening, suggesting nonspecific subserosal edema.","Subserosal edema of GB.","Focal fundal wall thickening, suggesting adenomyomatosis."];
+
+// 장기별 입력 줄 만들기
+$("orgs").innerHTML=["liver","gb","ihd","cbd","panc","spl","etc"].map(k=>{
+  if(k==="gb")return`<div class="orgrow" id="row-gb"><div class="row"><span class="org">담낭</span>
+      <label class="ck"><input type="checkbox" id="gb-chole"> S/P cholecystectomy</label>
+      <label class="ck"><input type="checkbox" id="gb-contr"> contracted GB</label>
+      <label class="ck"><input type="checkbox" id="gb-sludge"> sludge</label></div>
+    <div class="row"><label class="ck"><input type="checkbox" id="gb-stone"> stone</label><input type="number" step="0.1" min="0" id="gb-stoneSz" placeholder="cm"><label class="ck"><input type="checkbox" id="gb-stoneM"> multiple</label>
+      <label class="ck" style="margin-left:12px"><input type="checkbox" id="gb-polyp"> polyp</label><input type="number" step="0.1" min="0" id="gb-polypSz" placeholder="cm"><label class="ck"><input type="checkbox" id="gb-polypM"> multiple</label></div>
+    <div class="row"><label>wall</label><select id="gb-wall">${opt(GB_WALL.map(w=>[w,w||"(없음)"]))}</select></div>
+    <div class="row"><input type="text" id="gb-txt" placeholder="담낭 기타 문구 (선택)"></div></div>`;
+  if(k==="etc")return`<div class="orgrow"><div class="row"><span class="org">기타</span>
+      <label class="ck"><input type="checkbox" id="asc"> ascites</label><input type="text" id="ascLoc" value="perihepatic and perisplenic space" style="flex:0 1 230px">
+      <label>pleural effusion</label><select id="pe">${opt([["","없음"],["right","right"],["left","left"],["both","both"]])}</select></div>
+    <div class="row"><textarea id="etcTxt" class="s" style="min-height:40px" placeholder="기타 소견 (한 줄에 하나씩, 선택)"></textarea></div></div>`;
+  const o=ORG[k];
+  return`<div class="orgrow" id="row-${k}" data-custom=""><div class="row"><span class="org">${o.label}</span>
+      <select id="${k}">${opt([...o.presets.map((p,i)=>[i,p[0]]),["__","직접 입력…"]])}</select>
+      ${o.size?`<input type="number" step="0.1" min="0" id="${k}Sz" placeholder="${o.size} cm">`:""}</div>
+    <div class="row"><input type="text" class="g-txt" id="${k}Txt" placeholder="직접 입력 문구">
+      <input type="text" id="${k}Add" placeholder="덧붙일 문구 (예: (most severe in S2), suspicious sludge in distal CBD)"></div></div>`;
+}).join("");
+
+/* ---------- 간 병변 카드 ---------- */
+const LKIND={cyst:["hepatic cyst","hepatic cysts"],hem:["hemangioma","hemangiomas"],nod:["indeterminate nodule","indeterminate nodules"],calc:["calcified granuloma","calcified granulomas"],sparing:["focal fat sparing","focal fat sparing"],fatdep:["focal fat deposition","focal fat deposition"],susp:["suspicious mass","suspicious masses"]};
+const LOCS=["S1","S2","S3","S4","S5","S6","S7","S8","right lobe","left lobe","both lobes","hepatic dome"];
+const CNT={"1":"","two":"Two","several":"Several","multiple":"Multiple"};
+function addIt(quiet){
+  const d=document.createElement("div");d.className="card it";d.dataset.chg="s";
+  d.innerHTML=`<div class="row"><select data-k="kind">${opt([["cyst","Hepatic cyst"],["hem","Hemangioma"],["nod","Indeterminate nodule"],["calc","Calcified granuloma"],["sparing","Focal fat sparing"],["fatdep","Focal fat deposition"],["susp","Suspicious mass"]])}</select>
+    <select data-k="cert">${opt([["","(확신)"],["probable","probable"],["R/O","R/O"]])}</select>
+    <select data-k="locSel">${opt([["","위치 선택"],...LOCS,["__","직접 입력…"]])}</select>
+    <input type="text" class="g-loctxt" data-k="locTxt" placeholder="위치 직접 입력" style="flex:0 1 140px">
+    <input type="number" step="0.1" min="0" data-k="size" placeholder="cm"><label>cm</label>
+    <select data-k="cnt">${opt([["1","1개"],["two","two"],["several","several"],["multiple","multiple"]])}</select>
+    <select data-k="chg">${opt([["s","보임 (비교 없음)"],["u","변화 없음"],["i","크기 증가"],["d","크기 감소"],["n","새로 발견"]])}</select>
+    <label class="g-prev">이전</label><input type="number" step="0.1" min="0" data-k="prev" class="g-prev" placeholder="cm"><label class="g-prev">cm</label>
+    <button class="x" onclick="this.closest('.card').remove();upd()">삭제</button></div>
+    <div class="prev" data-o="prev"></div>
+    <div class="row"><input type="text" data-k="cm" placeholder="추가 문구 (선택)"><input type="text" data-k="conc" placeholder="결론 문장 직접 입력 (비우면 자동)"></div>`;
+  $("its").appendChild(d);if(!quiet)upd();
+}
+function val(c){const o={};c.querySelectorAll("[data-k]").forEach(e=>o[e.dataset.k]=e.type==="checkbox"?e.checked:e.value);
+  o.loc=o.locSel==="__"?o.locTxt.trim():o.locSel;return o}
+function setVal(c,k,v){
+  if(k==="loc"){if(!v)return;const inList=LOCS.includes(v);setVal(c,"locSel",inList?v:"__");if(!inList)setVal(c,"locTxt",v);return}
+  const e=c.querySelector(`[data-k="${k}"]`);if(!e||v===undefined)return;
+  if(e.type==="checkbox")e.checked=!!v;
+  else if(e.tagName==="SELECT"){if([...e.options].some(o=>o.value===String(v)))e.value=String(v)}
+  else e.value=v}
+// 영어 단어 뒤 조사: 받침 있는 발음(-ion, nodule, lesion, sparing)이면 이/은
+const jo=(w,a,b)=>/(?:ion|nodule|lesion|sparing)$/i.test(w.trim())?a:b;
+function buildLes(v){
+  const multi=v.cnt!=="1",[one,many]=LKIND[v.kind];
+  const lab=(v.cert?v.cert+" ":"")+(multi?many:one);
+  const s=parseFloat(v.size)||0,p=parseFloat(v.prev)||0,chd=(v.chg==="i"||v.chg==="d")&&p>0&&s>0;
+  const loc=v.loc||"liver";
+  const art=/^[aeiou8]|^11/i.test((s&&!multi?s+"cm ":"")+lab)?"an ":"a ";
+  const core=multi?`${CNT[v.cnt]} ${lab} in ${loc}${s&&!chd?` (up to ${s}cm)`:""}`:`${art}${s&&!chd?s+"cm ":""}${lab} in ${loc}`;
+  const low=x=>x[0].toLowerCase()+x.slice(1);
+  let e={s:core,n:"New "+core.replace(/^(a|an) /,""),u:"No change of "+low(core),i:"Interval increase in size of "+low(core),d:"Interval decrease in size of "+low(core)}[v.chg];
+  if(chd)e+=` (${p}cm -> ${s}cm)`;
+  e=e[0].toUpperCase()+e.slice(1)+".";
+  // 문장형 (한국어)
+  const kor=`${multi?{two:"two",several:"several",multiple:"multiple"}[v.cnt]+" ":""}${s&&!chd?(multi?`최대 ${s}cm 크기의 `:`약 ${s}cm 크기의 `):""}${lab}`;
+  let k;
+  if(v.chg==="s")k=`Liver ${loc}에 ${kor}${jo(lab,"이","가")} 있음.`;
+  else if(v.chg==="n")k=`Liver ${loc}에 ${kor}${jo(lab,"이","가")} 새로 관찰됨.`;
+  else if(chd)k=`Liver ${loc}에 보이던 ${kor}${jo(lab,"은","는")} ${p}cm에서 ${s}cm으로 크기 ${v.chg==="i"?"증가":"감소"}함.`;
+  else k=`Liver ${loc}에 보이던 ${kor}${jo(lab,"은","는")} 이전과 변화 없음.`;
+  const conc=v.conc&&v.conc.trim()?v.conc.trim():e;   // 결론에는 추가 문구를 넣지 않음
+  if(v.cm){e+=" "+v.cm;k+=" "+v.cm}
+  return{list:e,text:k,conc};
+}
+
+/* ---------- 장기 값 읽기 ---------- */
+function org(k){
+  const o=ORG[k],sel=$(k).value,add=$(k+"Add").value.trim(),sz=o.size?parseFloat($(k+"Sz").value)||0:0;
+  $("row-"+k).dataset.custom=sel==="__"?"1":"";
+  if(sel==="__"){const t=$(k+"Txt").value.trim();return{normal:!t,list:t+(add?" "+add:""),conc:t?(t+(add?" "+add:"")).replace(/\.?$/,"."):null,text:t+(add?" "+add:"")}}
+  const[pl,pc,pt]=o.presets[+sel];
+  const szs=sz?` (${sz}cm)`:"";
+  if(pc===null)return{normal:true,list:pl+(add?" "+add:""),conc:null,text:pt};
+  return{normal:false,list:pl+szs+(add?(/^,/.test(add)?"":" ")+add:""),conc:pc+szs,add,text:pt.replace(/ 있음\.$/,szs+" 있음.")+(add?" "+add:"")};
+}
+function gb(){
+  const L=[];
+  if($("gb-chole").checked)return{chole:true,items:["S/P cholecystectomy"]};
+  if($("gb-contr").checked)L.push("Contracted GB, limited evaluation");
+  if($("gb-stone").checked){const s=parseFloat($("gb-stoneSz").value)||0;L.push($("gb-stoneM").checked?`Multiple GB stones${s?` (up to ${s}cm)`:""}`:`GB stone${s?` (${s}cm)`:""}`)}
+  if($("gb-sludge").checked)L.push("GB sludge");
+  if($("gb-polyp").checked){const s=parseFloat($("gb-polypSz").value)||0;L.push($("gb-polypM").checked?`Multiple GB polyps${s?` (up to ${s}cm)`:""}`:`GB polyp${s?` (${s}cm)`:""}`)}
+  if($("gb-wall").value)L.push($("gb-wall").value.replace(/\.$/,""));
+  if($("gb-txt").value.trim())L.push($("gb-txt").value.trim().replace(/\.$/,""));
+  return{chole:false,items:L};
+}
+const dot=s=>/\.$/.test(s)?s:s+".";
+const joinAnd=a=>a.length<2?a.join(""):a.slice(0,-1).join(", ")+" and "+a[a.length-1];
+
+function upd(){
+  const les=[...document.querySelectorAll(".it")].map(c=>{const v=val(c);c.dataset.chg=v.chg;c.dataset.loc=v.locSel==="__"?"custom":"";return buildLes(v)});
+  const lv=org("liver"),ih=org("ihd"),cb=org("cbd"),pa=org("panc"),sp=org("spl"),g=gb();
+  const etc=[];
+  if($("asc").checked)etc.push(`Ascites in ${$("ascLoc").value.trim()||"abdomen"}.`);
+  if($("pe").value)etc.push(`${$("pe").value==="both"?"Both":$("pe").value[0].toUpperCase()+$("pe").value.slice(1)} pleural effusion.`);
+  $("etcTxt").value.split("\n").map(s=>s.trim()).filter(Boolean).forEach(s=>etc.push(dot(s)));
+  const xf=$("extraF").value.split("\n").map(s=>s.trim()).filter(Boolean),xc=$("extraC").value.split("\n").map(s=>s.trim()).filter(Boolean);
+  const textStyle=$("style").value==="text";
+  const F=[];
+
+  if(!textStyle){
+    F.push(`간 :  ${lv.list}`);
+    if(les.length)les.forEach(l=>F.push(IND+l.list));else F.push(IND+"관찰되는 간종괴 없음");
+    const gl=g.items.length?g.items.map(dot):["특이 소견 없음"];
+    F.push(`담낭 : ${gl[0]}`);gl.slice(1).forEach(x=>F.push(IND+x));
+    F.push(`간내담관 : ${ih.list}`);
+    F.push(`간외담관 : ${cb.list}`);
+    F.push(`췌장: ${pa.list}`);
+    F.push(`비장종대 : ${sp.list}`);
+    if(etc.length){F.push(`기타 : ${etc[0]}`);etc.slice(1).forEach(x=>F.push(IND+x))}
+  }else{
+    F.push(lv.normal&&!les.length?"Liver의 echogenicity가 정상 범위이며 liver 내에 focal lesion 초음파 내에서는 보이지 않음.":lv.text);
+    if(!lv.normal&&!les.length)F.push("Liver 내에 focal lesion은 초음파 내에서는 보이지 않음.");
+    les.forEach(l=>F.push(l.text));
+    if(g.chole){F.push("S/P cholecystectomy.");F.push(ih.normal&&cb.normal?"Op. site에 특이 소견 보이지 않으며, bile duct dilatation 보이지 않음.":"Op. site에 특이 소견 보이지 않음.")}
+    else if(g.items.length)g.items.forEach(x=>F.push(dot(x)));
+    else F.push("GB에 특이 소견 없음.");
+    if(!(g.chole&&ih.normal&&cb.normal)){
+      if(ih.normal&&cb.normal)F.push("IHD 및 CBD의 확장 없음.");
+      else{if(!ih.normal)F.push(dot(ih.text));if(!cb.normal)F.push(cb.text.replace(/ 있음\.$/,(parseFloat($("cbdSz").value)?` (${parseFloat($("cbdSz").value)}cm)`:"")+" 있음."))}
+    }
+    F.push(pa.normal?"Visible pancreas에 특이 소견 보이지 않음.":dot(pa.text));
+    F.push(sp.normal?"Spleen에 특이 소견 없고 정상 크기임.":dot(sp.text));
+    etc.forEach(x=>F.push(x));
+  }
+  xf.forEach(x=>F.push(x));
+
+  // 결론
+  const C=[];let head="";
+  if(!lv.normal)C.push(dot(lv.conc));
+  les.forEach(l=>C.push(l.conc));
+  if(g.chole)head="S/P cholecystectomy.";
+  else g.items.forEach(x=>C.push(dot(x)));
+  // 담관: 둘 다 확장이면 "Diffuse IHD dilatation with CBD dilatation." / CBD 에 덧붙인 말은 " - " 줄로 (IHD 덧붙임은 소견에만)
+  const cbSub=cb.add?`\n - ${cb.add.replace(/^,\s*/,"")}`:"";
+  if(!ih.normal&&!cb.normal)C.push(`${ih.conc} with ${cb.conc}.`+cbSub);
+  else{if(!ih.normal)C.push(dot(ih.conc));if(!cb.normal)C.push(dot(cb.conc)+cbSub)}
+  if(!pa.normal)C.push(dot(pa.conc));
+  if(!sp.normal)C.push(dot(sp.conc));
+  etc.forEach(x=>C.push(x));
+  xc.forEach(x=>C.push(x));
+  // 정상 장기 묶음 (담관은 넣지 않음)
+  const nl=[];
+  if(lv.normal&&!les.length&&!g.chole)nl.push("liver");
+  if(!g.chole&&!g.items.length)nl.push("GB");
+  if(pa.normal)nl.push("visible pancreas");
+  if(sp.normal)nl.push("spleen");
+  let concl;
+  if(g.chole){
+    // cholecystectomy 후: "S/P cholecystectomy." 다음에 번호 매긴 줄
+    const items=[];
+    if(ih.normal&&cb.normal)items.push("No abnormal postop. findings.");
+    if(lv.normal&&!les.length)items.push("No focal lesion in the liver.");
+    items.push(...C);
+    concl=head+"\n"+items.map((t,i)=>`${i+1}. ${t}`).join("\n");
+  }else{
+    if(nl.length)C.push(C.length?`No remarkable findings in ${joinAnd(nl)}.`:`No remarkable findings in ${joinAnd(nl)}.`);
+    concl=C.join("\n");
+  }
+  const rec=$("rec").value.trim(),cm=$("comment").value.trim();
+  $("out").value=`${$("head").value?$("head").value+"\n\n":""}${F.join("\n")}
+
+
+====== [Conclusion] ======
+${concl}${rec?`\n\nRecommendation: ${rec}`:""}${cm?`\n\nComment : ${cm}`:""}`;
+}
+
+/* ---------- 기존 판독문 불러오기 ---------- */
+const nk=s=>s.toLowerCase().replace(/[^a-z0-9가-힣]/g,"");
+// 장기 칸: 문구가 고정 문구로 시작하면 그 항목 + 나머지는 덧붙일 문구, 아니면 직접 입력
+function setOrg(k,text){
+  const o=ORG[k];text=text.trim();
+  if(o.size){const m=text.match(/\((\d+(?:\.\d+)?)\s*cm\)/);if(m){$(k+"Sz").value=m[1];text=text.replace(m[0],"").replace(/\s{2,}/g," ").trim()}}
+  let best=-1,bl=0;
+  o.presets.forEach((p,i)=>{const a=nk(p[0]);if(a&&nk(text).startsWith(a)&&a.length>bl){best=i;bl=a.length}});
+  if(best<0&&o.presets.some((p,i)=>p[1]===null&&isNormal(text)&&(best=i,true))){}
+  if(best>=0){$(k).value=String(best);
+    let rest=text;const words=o.presets[best][0];
+    if(nk(text).startsWith(nk(words))){let n=0,cut=0;const target=nk(words).length;for(let i=0;i<text.length&&n<target;i++){if(/[a-z0-9가-힣]/i.test(text[i]))n++;cut=i+1}rest=text.slice(cut)}
+    else rest="";
+    $(k+"Add").value=rest.replace(/^[\s.]+/,"").trim();
+  }else{$(k).value="__";$(k+"Txt").value=text}
+}
+const NEG=/없\s*(?:음|다|고|으며|습니다)|않\s*(?:음|다|고|으며)|특이\s*(?:소견|사항)|정상|(?:^|\s)no\s|unremarkable|not\s+(?:seen|visible)/i;
+const isNormal=s=>!/\d\s*cm/i.test(s)&&NEG.test(s.replace(/(?:interval\s+)?변화\s*(?:는|가|도)?\s*없\S*|no (?:interval )?change|stable/gi,""));
+const kindOfLes=t=>/hemangioma/i.test(t)?"hem":/cyst/i.test(t)?"cyst":/granuloma|calcifi/i.test(t)?"calc":/fat sparing/i.test(t)?"sparing":/fat deposition/i.test(t)?"fatdep":/HCC|malignan|metasta|suspicious/i.test(t)?"susp":/nodule|mass|lesion|종괴|결절/i.test(t)?"nod":"";
+function lesOf(t){
+  const kind=kindOfLes(t);if(!kind)return null;
+  const o={kind,chg:"u",orig:t};
+  const seg=t.match(/\bS\s*([1-8])\b/i);o.loc=seg?"S"+seg[1]:(t.match(/right lobe|left lobe|both lobes|hepatic dome/i)||[""])[0].toLowerCase();
+  const ch=t.match(/(\d+(?:\.\d+)?)\s*cm\s*(?:에서|->)\s*(\d+(?:\.\d+)?)\s*cm/);
+  const sizes=[...t.matchAll(/(\d+(?:\.\d+)?)\s*(cm|mm)\b/gi)].map(m=>m[2].toLowerCase()==="mm"?+m[1]/10:+m[1]);
+  if(ch)o.size=ch[2];else if(sizes.length)o.size=String(Math.max(...sizes));
+  const cw=(t.match(/\b(two|several|multiple)\b|여러|다수/i)||[])[0];
+  if(cw)o.cnt=/여러|다수/.test(cw)?"multiple":cw.toLowerCase();
+  if(/probable|probably|가능성/i.test(t))o.cert="probable";else if(/R\/O|의심/i.test(t))o.cert="R/O";
+  return o;
+}
+function showPrev(c,label,text){const p=c.querySelector("[data-o=prev]");const b=document.createElement("b"),d=document.createElement("div");
+  b.textContent=label+" ";d.append(b,text);p.appendChild(d)}
+function newCard(o){addIt(true);const c=$("its").lastElementChild;Object.keys(o).forEach(k=>setVal(c,k,o[k]));c.dataset.orig=o.size||"";
+  if(o.orig)showPrev(c,"이전 소견:",o.orig);return c}
+function resetForm(){
+  ["liver","ihd","cbd","panc","spl"].forEach(k=>{$(k).value="0";$(k+"Txt").value="";$(k+"Add").value="";if(ORG[k].size)$(k+"Sz").value=""});
+  ["gb-chole","gb-contr","gb-sludge","gb-stone","gb-stoneM","gb-polyp","gb-polypM","asc"].forEach(id=>$(id).checked=false);
+  ["gb-stoneSz","gb-polypSz","gb-txt","etcTxt","extraF","extraC","rec","comment"].forEach(id=>$(id).value="");
+  $("gb-wall").value="";$("pe").value="";$("its").innerHTML="";
+}
+// 담낭 문구 → 체크박스
+function setGB(text){
+  const t=text.trim();if(!t||isNormal(t))return;
+  if(/cholecystectomy/i.test(t)){$("gb-chole").checked=true;return}
+  let used=false;
+  if(/contracted/i.test(t)){$("gb-contr").checked=true;used=true}
+  if(/stone/i.test(t)){$("gb-stone").checked=true;$("gb-stoneM").checked=/multiple|stones/i.test(t);const m=t.match(/(\d+(?:\.\d+)?)\s*cm/);if(m)$("gb-stoneSz").value=m[1];used=true}
+  if(/sludge/i.test(t)){$("gb-sludge").checked=true;used=true}
+  if(/polyp/i.test(t)){$("gb-polyp").checked=true;$("gb-polypM").checked=/multiple|polyps/i.test(t);const m=t.match(/(\d+(?:\.\d+)?)\s*cm/);if(m)$("gb-polypSz").value=m[1];used=true}
+  const w=GB_WALL.find(x=>x&&nk(t).startsWith(nk(x).slice(0,25)));
+  if(w){$("gb-wall").value=w;used=true}
+  else if(/subserosal edema|wall thickening|adenomyomatosis/i.test(t)){$("gb-txt").value=t.replace(/\.$/,"");used=true}
+  if(!used)$("gb-txt").value=($("gb-txt").value?$("gb-txt").value+"; ":"")+t.replace(/\.$/,"");
+}
+function setEtc(text,X){
+  const t=text.trim();if(!t)return;
+  const a=t.match(/ascites(?:\s+in\s+([^.]+))?/i);
+  if(a){$("asc").checked=true;if(a[1])$("ascLoc").value=a[1].trim();return}
+  const pe=t.match(/(right|left|both|bilateral)?\s*pleural effusion/i);
+  if(pe){$("pe").value=pe[1]?(/both|bilateral/i.test(pe[1])?"both":pe[1].toLowerCase()):"both";return}
+  X.push(dot(t));
+}
+function splitReport(t){
+  const m=t.match(/={2,}\s*\[?\s*(?:Conclusion|결\s*론)\s*\]?\s*={2,}/i);
+  if(m)return[t.slice(0,m.index),t.slice(m.index+m[0].length)];
+  return[t,""];
+}
+function importReport(){
+  const t=$("src").value.trim();
+  if(!t){$("impmsg").textContent="붙여넣은 내용이 없어요";return}
+  if(document.querySelector(".it")&&!confirm("현재 입력한 간 병변을 지우고 불러올까요?"))return;
+  resetForm();
+  const[fp,cp]=splitReport(t);
+  const L=[],X=[],ET=[];
+  const lines=fp.split("\n").map(s=>s.replace(/\s+$/,"")).filter(s=>s.trim()&&!/^\s*<.*>\s*$/.test(s));
+  const listStyle=lines.some(l=>/^\s*간\s*:/.test(l));
+  $("style").value=listStyle?"list":"text";
+  if(listStyle){
+    let cur="";
+    const KEY=[["liver",/^\s*간\s*:\s*/],["gb",/^\s*담낭\s*:\s*/],["ihd",/^\s*간내\s*담관\s*:\s*/],["cbd",/^\s*간외\s*담관\s*:\s*/],["panc",/^\s*췌장\s*:\s*/],["spl",/^\s*비장(?:종대)?\s*:\s*/],["etc",/^\s*기타\s*:\s*/]];
+    let liverFirst=true;
+    for(const raw of lines){
+      const hit=KEY.find(([,re])=>re.test(raw));
+      let text=raw.trim();
+      if(hit){cur=hit[0];text=raw.replace(hit[1],"").trim()}
+      else if(!/^\s/.test(raw))cur="etc";   // 들여쓰기 없는 줄은 기타
+      if(!text)continue;
+      if(cur==="liver"){
+        if(hit&&liverFirst){setOrg("liver",text);liverFirst=false;continue}
+        if(/간종괴\s*없|focal lesion/i.test(text)&&isNormal(text))continue;
+        const o=lesOf(text);if(o)L.push(o);else X.push(text);
+      }
+      else if(cur==="gb")setGB(text);
+      else if(cur==="etc")setEtc(text,ET);
+      else if(hit)setOrg(cur,text);
+      else $(cur+"Add").value=($(cur+"Add").value+" "+text).trim();
+    }
+  }else{
+    // 문장형: 문장마다 장기 단어로 나눔
+    const sens=lines.join(" ").replace(/\b(op|d\/t)\.\s+/gi,"$1.§").split(/(?<=[.。])\s+/).map(s=>s.replace(/§/g," ").trim()).filter(Boolean);
+    for(const s of sens){
+      if(/cholecystectomy/i.test(s)){$("gb-chole").checked=true;continue}
+      if(/^op\.?\s*site/i.test(s)&&isNormal(s))continue;
+      if(/liver|간/i.test(s)&&/echogenicity|echotexture|fatty|cirrhosis/i.test(s)&&!kindOfLes(s.replace(/focal lesion[^.]*/i,""))){
+        if(/fatty/i.test(s)){const d=(s.match(/mild|moderate|severe/i)||["mild"])[0].toLowerCase();$("liver").value=String(ORG.liver.presets.findIndex(p=>p[0].includes(d)))}
+        else if(/cirrhosis/i.test(s))$("liver").value="5";else if(/coarse/i.test(s))$("liver").value="4";
+        continue}
+      if(/focal lesion/i.test(s)&&isNormal(s))continue;
+      if(/pancrea/i.test(s)){if(!isNormal(s))setOrg("panc",s);continue}
+      if(/spleen|비장/i.test(s)){if(!isNormal(s))setOrg("spl",s);continue}
+      if(/\bGB\b|gallbladder|담낭/i.test(s)){setGB(s);continue}
+      if(/IHD|CBD|bile duct|담관/i.test(s)){if(!isNormal(s)){if(/IHD/i.test(s))setOrg("ihd",s);if(/CBD/i.test(s))setOrg("cbd",s.replace(/^.*?(CBD)/i,"$1"))}continue}
+      if(/ascites|pleural effusion/i.test(s)){setEtc(s,ET);continue}
+      const o=lesOf(s);if(o){L.push(o);continue}
+      if(!isNormal(s))X.push(s);
+    }
+  }
+  $("etcTxt").value=ET.join("\n");
+  const cards=L.map(newCard);
+  upd();
+  // 결론: 자동으로 만든 결론에 이미 들어 있는 내용은 건너뛰고, 간 병변 결론은 카드에 "이전 결론"으로 표시
+  const gen=nk($("out").value.split("====== [Conclusion] ======")[1]||"");
+  const XC=[];
+  for(const raw of cp.split("\n")){
+    let s=raw.trim().replace(/^\d+\.\s*/,"");if(!s||/^<.*>$/.test(s))continue;
+    if(/^(?:Rec(?:ommendation)?\b[\s.):;]*)/i.test(s)){$("rec").value=s.replace(/^(?:Rec(?:ommendation)?\b[\s.):;]*)/i,"").trim();continue}
+    if(/^Comment\s*:/i.test(s)){$("comment").value=s.replace(/^Comment\s*:\s*/i,"");continue}
+    if(/^No remarkable|^No abnormal postop|^No focal lesion|^S\/P cholecystectomy|^Unassessable spleen/i.test(s))continue;
+    const kd=kindOfLes(s);
+    if(kd){const c=cards.find(c=>val(c).kind===kd&&!c.dataset.cm);if(c){c.dataset.cm="1";showPrev(c,"이전 결론:",s);continue}}
+    // 단어 대부분이 자동 결론에 있으면 건너뜀
+    const w=(s.toLowerCase().match(/[a-z]{3,}/g)||[]);
+    if(w.length&&w.filter(x=>gen.includes(x)).length/w.length>=0.7)continue;
+    XC.push(s);
+  }
+  $("extraF").value=X.join("\n");$("extraC").value=XC.join("\n");
+  if(X.length||XC.length)$("xtra").open=true;
+  upd();
+  $("impmsg").textContent=`간 병변 ${cards.length}개, 기타 Findings ${X.length}줄, 기타 Conclusion ${XC.length}줄을 불러왔어요. 결과를 꼭 확인하세요.`;
+}
+function clearSrc(){$("src").value="";$("impmsg").textContent="";$("src").focus()}
+function onSize(e){
+  const el=e.target;if(!el.matches||!el.matches('[data-k="size"]'))return;
+  const c=el.closest(".it"),orig=parseFloat(c.dataset.orig);if(!orig)return;
+  const ch=c.querySelector('[data-k="chg"]');if(!["u","i","d"].includes(ch.value))return;
+  const cur=parseFloat(el.value),pv=c.querySelector('[data-k="prev"]');
+  if(!cur||cur===orig){ch.value="u";pv.value=""}else{ch.value=cur>orig?"i":"d";pv.value=orig}
+}
+function onChg(e){
+  const el=e.target;if(!el.matches||!el.matches('[data-k="chg"]'))return;
+  const c=el.closest(".it"),orig=c.dataset.orig,pv=c.querySelector('[data-k="prev"]');
+  if((el.value==="i"||el.value==="d")&&!pv.value&&orig)pv.value=orig;
+}
+function copyOut(){
+  const t=$("out");t.select();
+  (navigator.clipboard?navigator.clipboard.writeText(t.value):Promise.reject()).catch(()=>document.execCommand("copy"));
+  $("msg").textContent="복사됨";setTimeout(()=>$("msg").textContent="",1500);
+}
+const skip=e=>e.target.id==="out"||(e.target.closest&&e.target.closest("#store,#impbox"));
+document.addEventListener("input",e=>{if(skip(e))return;onSize(e);upd()});
+document.addEventListener("change",e=>{if(skip(e))return;onChg(e);upd()});
+upd();
+
+Store.init({module:"abd-us",out:"out",fields:{rec:"Rec",comment:"Comment"},
+  onUse:body=>{$("src").value=body;$("impbox").open=true;importReport()}});
+</script>
+</body>
+</html>

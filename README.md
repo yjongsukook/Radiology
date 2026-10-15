@@ -15,7 +15,7 @@
 | Ultrasound | 갑상선 초음파 (K-TIRADS) | 사용 가능 |
 | Ultrasound | 유방 초음파 (BI-RADS) | 사용 가능 |
 | Ultrasound | 근골격계 초음파 | 준비 중 |
-| Ultrasound | 복부 초음파 | 준비 중 |
+| Ultrasound | 상복부 초음파 (liver, GB, pancreas, spleen) | 사용 가능 |
 | Mammography | Mammography (BI-RADS) | 사용 가능 |
 | X-ray | 흉부 X-ray | 준비 중 |
 | CT | 복부 CT | 준비 중 |
