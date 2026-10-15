@@ -32,6 +32,7 @@ button.p{background:var(--acc);border-color:var(--acc);color:#fff}
 .it:not([data-kind=ln]) .g-ln{display:none}
 .it:not([data-kind=nodule]) .g-k{display:none}
 .it[data-kind=ln] .g-reg{display:none}
+.it:not([data-reg=custom]) .g-regtxt{display:none}
 .it:not([data-kind=ln]) .g-lvl{display:none}
 .it:not([data-chg=i]):not([data-chg=d]) .g-prev{display:none}
 </style>
@@ -85,7 +86,7 @@ button.p{background:var(--acc);border-color:var(--acc);color:#fff}
   <div class="row"><button class="p" onclick="copyOut()">복사</button><span id="msg" class="sub"></span></div>
 </section>
 </main>
-<datalist id="regs"><option>upper pole</option><option>mid portion</option><option>lower pole</option><option>lower portion</option><option>mid to lower portion</option><option>upper pole posterior</option><option>paraisthmic area</option><option>retrotracheal area</option><option>Op. bed</option></datalist>
+<script>const REGS=["upper pole","mid portion","lower pole","lower portion","mid to lower portion","upper pole posterior","paraisthmic area","retrotracheal area","Op. bed"];</script>
 
 <script>
 const $=id=>document.getElementById(id);
@@ -100,7 +101,8 @@ function addIt(quiet){
   const d=document.createElement("div");d.className="card it";d.dataset.kind="nodule";d.dataset.chg="s";
   d.innerHTML=`<div class="row"><select data-k="kind">${opt([["nodule","Nodule"],["mass","Mass (extrathyroidal 등)"],["spongiform","Spongiform"],["cyst","Cyst"],["ln","Lymph node"]])}</select>
   <select data-k="side">${opt(["Right","Left","Both","Isthmus"])}</select>
-  <input type="text" class="g-reg" data-k="reg" list="regs" placeholder="위치 (예: mid portion)" style="flex:0 1 170px">
+  <select class="g-reg" data-k="regSel">${opt([["","위치 선택"],...REGS,["__","직접 입력…"]])}</select>
+  <input type="text" class="g-reg g-regtxt" data-k="regTxt" placeholder="위치 직접 입력" style="flex:0 1 150px">
   <select class="g-lvl" data-k="lvl">${LVLS.map(l=>`<option value="${l}">level ${l}</option>`).join("")}</select>
   <input type="number" step="0.1" min="0" data-k="size" placeholder="cm"><label>cm</label>
   <select data-k="chg">${opt([["s","보임 (비교 없음)"],["u","변화 없음"],["i","크기 증가"],["d","크기 감소"],["n","새로 발견"]])}</select>
@@ -124,8 +126,11 @@ function addIt(quiet){
   <div class="row"><input type="text" data-k="conc" placeholder="Conclusion 문장 직접 입력 (비우면 자동 생성)"></div>`;
   $("its").appendChild(d);if(!quiet)upd();
 }
-function val(c){const o={};c.querySelectorAll("[data-k]").forEach(e=>o[e.dataset.k]=e.type==="checkbox"?e.checked:e.value);return o}
-function setVal(c,k,v){const e=c.querySelector(`[data-k="${k}"]`);if(!e||v===undefined)return;
+function val(c){const o={};c.querySelectorAll("[data-k]").forEach(e=>o[e.dataset.k]=e.type==="checkbox"?e.checked:e.value);
+  o.reg=o.regSel==="__"?o.regTxt.trim():o.regSel;return o}
+function setVal(c,k,v){
+  if(k==="reg"){if(!v)return;const inList=REGS.includes(v);setVal(c,"regSel",inList?v:"__");if(!inList)setVal(c,"regTxt",v);return}
+  const e=c.querySelector(`[data-k="${k}"]`);if(!e||v===undefined)return;
   if(e.type==="checkbox")e.checked=!!v;
   else if(e.tagName==="SELECT"){if([...e.options].some(o=>o.value===String(v)))e.value=String(v)}
   else e.value=v}
@@ -180,7 +185,7 @@ function build(v){
 }
 
 function upd(){
-  const its=[...document.querySelectorAll(".it")].map(c=>{const v=val(c);c.dataset.kind=v.kind;c.dataset.chg=v.chg;const b=build(v);
+  const its=[...document.querySelectorAll(".it")].map(c=>{const v=val(c);c.dataset.kind=v.kind;c.dataset.chg=v.chg;c.dataset.reg=v.regSel==="__"?"custom":"";const b=build(v);
     if(v.kind==="nodule"){c.querySelector("[data-o=cat]").textContent="K-TIRADS "+b.k;c.querySelector("[data-o=rec]").textContent=fnaHint(b.k,b.s)}return b});
   const post=$("post").value,par=$("par").value,side={R:"Right",L:"Left"}[post];
   const lines=id=>$(id).value.split("\n").map(s=>s.trim()).filter(Boolean);
