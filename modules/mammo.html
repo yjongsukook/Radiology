@@ -353,6 +353,7 @@ function importReport(){
   const L=[],X=[];let prevLes=null;
   fp.split("\n").map(s=>s.trim()).filter(Boolean).forEach(raw=>{
     let line=raw.replace(/^findings?\s*:\s*/i,"").trim();if(!line)return;
+    if(/^MAMMOGRAPHY\s*\(UNILATERAL\)/i.test(line)){const s=sideOf(line);if(s==="Right"||s==="Left")st.exam=s[0];prevLes=null;return}
     if(/^<.*>$/.test(line)||/^MAMMOGRAPHY\b/i.test(line)||/^Breast\s*Composition/i.test(line)){prevLes=null;return}
     const dk=Object.keys(DISC).find(k=>line.replace(/\s/g,"")===DISC[k].replace(/\s/g,""));
     if(dk){st.disc=dk;prevLes=null;return}
@@ -421,11 +422,13 @@ function importReport(){
   $("exam").value=st.exam;$("mag").value=st.mag;$("post").value=st.post;$("norec").checked=st.norec;$("imp").value=st.imp;$("comp").value=st.comp;
   $("disc").value=st.disc?st.disc:"auto";
   $("cat").value="auto";
+  if(window.Voice&&Voice.fresh()&&st.cat)$("cat").value=st.cat;   // 받아쓰기로 말한 Category 는 그대로 고정
   // 이전에 이미 Category 2 였던 판독이면, Category 3 형태 병변도 benign(2)으로 둠 (기간은 모르므로 "24개월" 이라고 쓰지 않음)
-  if(st.cat==="2")cards.forEach(c=>{const v=val(c);if(v.cat==="auto"&&!v.fu&&build(Object.assign({},v,{fu:""})).cat==="3")setVal(c,"cat","2")});
+  const isFresh=window.Voice&&Voice.fresh();
+  if(!isFresh&&st.cat==="2")cards.forEach(c=>{const v=val(c);if(v.cat==="auto"&&!v.fu&&build(Object.assign({},v,{fu:""})).cat==="3")setVal(c,"cat","2")});
   // 이전이 Category 3 이면 이번 검사는 다음 추적 단계: 처음 → 6, 6 → 12, 12 → 24개월
   let stepped=0;
-  if(st.cat==="3")cards.forEach(c=>{const v=val(c);if(build(Object.assign({},v,{fu:""})).cat!=="3")return;
+  if(!isFresh&&st.cat==="3")cards.forEach(c=>{const v=val(c);if(build(Object.assign({},v,{fu:""})).cat!=="3")return;
     const nx={"":"6","6":"12","12":"24"}[v.fu];if(nx){setVal(c,"fu",nx);stepped++}});
   $("rec").value=st.rec&&!AUTO_RECS.includes(st.rec)?st.rec:"";
   $("comment").value=st.comment;

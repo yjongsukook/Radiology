@@ -503,10 +503,12 @@ function importReport(){
   $("imp").value=st.imp;$("intact").checked=st.intact||!st.imp;
   if(st.cdl)$("cdl").value=st.cdl;
   $("cat").value="auto";
+  if(window.Voice&&Voice.fresh()&&st.cat)$("cat").value=st.cat;   // 받아쓰기로 말한 Category 는 그대로 고정
   // 이전에 이미 Category 2 였던 판독이면, Category 3 형태 병변도 benign(2)으로 둠 (기간은 모르므로 "24개월" 이라고 쓰지 않음)
-  if(st.cat==="2")cards.forEach(c=>{const v=val(c);if(v.cat==="auto"&&!v.fu&&build(Object.assign({},v,{fu:""})).cat==="3")setVal(c,"cat","2")});
+  const isFresh=window.Voice&&Voice.fresh();
+  if(!isFresh&&st.cat==="2")cards.forEach(c=>{const v=val(c);if(v.cat==="auto"&&!v.fu&&build(Object.assign({},v,{fu:""})).cat==="3")setVal(c,"cat","2")});
   // 이전 판독에서 suspicious/malignant 로 기술한 병변은 이전 Category(4a 이상)보다 낮게 자동 판정되지 않게 맞춤
-  if(RANK.indexOf(st.cat)>=RANK.indexOf("4a"))cards.forEach(c=>{if(c.dataset.susp!=="1")return;const v=val(c);
+  if(!isFresh&&RANK.indexOf(st.cat)>=RANK.indexOf("4a"))cards.forEach(c=>{if(c.dataset.susp!=="1")return;const v=val(c);
     if(v.cat==="auto"&&RANK.indexOf(build(v).cat)<RANK.indexOf(st.cat))setVal(c,"cat",st.cat)});
   // 자동으로 만든 결론이 이전 결론과 표현이 다르면 이전 결론 문장을 그대로 씀 ("No change of …")
   matched.forEach(([c,s])=>{
@@ -515,7 +517,7 @@ function importReport(){
       setVal(c,"conc",/^No change/i.test(s)?s:"No change of "+s.replace(/^([A-Z])(?=[a-z\s])/,x=>x.toLowerCase()));
   });
   let stepped=0;
-  if(st.cat==="3")cards.forEach(c=>{const v=val(c);if(build(Object.assign({},v,{fu:""})).cat!=="3")return;
+  if(!isFresh&&st.cat==="3")cards.forEach(c=>{const v=val(c);if(build(Object.assign({},v,{fu:""})).cat!=="3")return;
     const nx={"":"6","6":"12","12":"24"}[v.fu];if(nx){setVal(c,"fu",nx);stepped++}});
   $("rec").value=st.rec&&!AUTO_RECS.includes(st.rec)&&!/routine mammography/i.test(st.rec)?st.rec:"";
   $("comment").value=st.comment;
