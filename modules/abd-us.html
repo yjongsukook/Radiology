@@ -40,7 +40,9 @@ button.p{background:var(--acc);border-color:var(--acc);color:#fff}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js"></script>
 <script src="../lib/db.js"></script>
 <script src="../lib/store.js"></script>
+<script src="../lib/learn.js"></script>
 <script src="../lib/voice.js"></script>
+<script src="../lib/report.js"></script>
 </head>
 <body>
 <main>
@@ -462,6 +464,7 @@ document.addEventListener("change",e=>{if(skip(e))return;onChg(e);upd()});
 upd();
 
 Voice.attach({module:"abd"});
+Report.attach({module:"abd"});
 Store.init({module:"abd-us",out:"out",fields:{rec:"Rec",comment:"Comment"},
   onUse:body=>{$("src").value=body;$("impbox").open=true;importReport()}});
 </script>

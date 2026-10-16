@@ -39,7 +39,9 @@ button.p{background:var(--acc);border-color:var(--acc);color:#fff}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js"></script>
 <script src="../lib/db.js"></script>
 <script src="../lib/store.js"></script>
+<script src="../lib/learn.js"></script>
 <script src="../lib/voice.js"></script>
+<script src="../lib/report.js"></script>
 </head>
 <body>
 <main>
@@ -372,6 +374,7 @@ function copyOut(){
 }
 /* ---------- 내 저장소 (lib/store.js) ---------- */
 Voice.attach({module:"thyroid"});
+Report.attach({module:"thyroid"});
 Store.init({module:"thyroid-us",out:"out",fields:{reason:"Reason",comment:"Comment",rec:"Rec"},
   onUse:body=>{$("src").value=body;$("imp").open=true;importReport()}});
 
