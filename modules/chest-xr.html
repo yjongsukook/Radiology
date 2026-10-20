@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chest X-ray 판독문 생성기</title>
+<style>
+:root{--bg:#f5f6f4;--card:#fff;--ink:#1d2421;--mute:#66706b;--line:#d5dbd7;--acc:#1f6f5c;--warn:#a8452a;--tip:#7a5b12}
+@media(prefers-color-scheme:dark){:root{--bg:#161a18;--card:#202623;--ink:#e6ebe8;--mute:#93a09a;--line:#34403b;--acc:#58b9a0;--warn:#e08a6c;--tip:#e0c27a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 "Pretendard","Noto Sans KR",system-ui,sans-serif}
+main{max-width:1250px;margin:0 auto;padding:16px;display:grid;grid-template-columns:1.15fr .85fr;gap:16px}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+h1{font-size:18px;margin:0 0 4px}h2{font-size:14px;margin:14px 0 6px}
+.sub{color:var(--mute);font-size:12px;margin:0 0 8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:10px;margin-bottom:10px}
+summary{cursor:pointer;font-weight:600}
+.row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:4px 0}
+label{font-size:12px;color:var(--mute)}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:4px 6px;max-width:100%}
+input[type=text]{flex:1;min-width:140px}
+textarea.s{width:100%;min-height:64px;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace}
+.ck{display:inline-flex;gap:4px;align-items:center;color:var(--ink);font-size:13px}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:4px;padding:5px 10px}
+button.p{background:var(--acc);border-color:var(--acc);color:#fff}
+button.sm{padding:2px 8px;font-size:12px}
+:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.k{font-weight:600;color:var(--acc)}
+#out{width:100%;min-height:520px;font:13px/1.55 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap}
+.x{margin-left:auto;color:var(--warn)}
+.prev{font-size:12px;color:var(--mute);background:var(--bg);border-left:3px solid var(--acc);border-radius:3px;padding:4px 8px;margin:6px 0;white-space:pre-wrap}
+.prev:empty{display:none}
+.prev b{color:var(--ink);font-weight:600}
+.it textarea{min-height:44px}
+.it[data-chg=u] .chg-u,.it[data-chg=i] .chg-i,.it[data-chg=d] .chg-d,.it[data-chg=n] .chg-n{background:var(--acc);border-color:var(--acc);color:#fff}
+/* 상용구 라이브러리 */
+#lib{max-height:460px;overflow:auto;padding-right:4px}
+#lib details{border-top:1px solid var(--line);padding:4px 0}
+#lib details:first-child{border-top:0}
+.ph{display:flex;gap:8px;align-items:flex-start;padding:5px 4px;border-radius:4px;cursor:pointer}
+.ph:hover{background:var(--bg)}
+.ph .t{font-size:12px;font-weight:600;min-width:150px;max-width:180px;color:var(--acc)}
+.ph .l{font:12px/1.45 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;flex:1}
+.ph .tip{display:block;font:12px/1.45 "Pretendard","Noto Sans KR",system-ui,sans-serif;color:var(--tip);margin-top:2px}
+.ph.hint{cursor:default}
+.chips button{padding:2px 8px;font-size:12px}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js"></script>
+<script src="../lib/db.js"></script>
+<script src="../lib/store.js"></script>
+<script src="../lib/learn.js"></script>
+<script src="../lib/voice.js"></script>
+<script src="../lib/report.js"></script>
+</head>
+<body>
+<main>
+<section>
+  <h1>Chest X-ray 판독문 생성기</h1>
+  <p class="sub">상용구를 골라 결론 항목을 만들고, 카드에서 바로 고치세요. 환자 정보는 입력하지 마세요. 문구는 직접 검수해서 사용하세요.</p>
+
+  <details class="card" id="impbox" open>
+    <summary>기존 판독문 불러오기 (F/U용)</summary>
+    <p class="sub">이전 report를 붙여넣고 불러오기를 누르면 번호 항목(하위 줄 포함)이 카드로 바뀌어요. 카드의 변화 없음/증가/감소/새로 버튼으로 F/U 문장으로 바꿀 수 있어요.</p>
+    <textarea id="src" class="s" style="min-height:120px" placeholder="기존 report 붙여넣기"></textarea>
+    <div class="row"><button class="p" onclick="importReport()">불러오기</button><button onclick="clearSrc()">지우기</button><span id="impmsg" class="sub"></span></div>
+  </details>
+
+  <details class="card" id="store"></details>
+
+  <div class="card">
+    <div class="row"><label>촬영</label><select id="view"><option value="PA" selected>PA</option><option value="AP">AP</option><option value="PA & LAT">PA & Lat</option><option value="DECUBITUS">Decubitus</option></select>
+      <label>머리말</label><select id="head"><option value="auto" selected>자동 (촬영 방향)</option><option value="">(없음)</option></select>
+      <label>Findings 칸</label><select id="fmode"><option value="none">쓰지 않음 (Conclusion만)</option><option value="same">결론 항목을 그대로</option><option value="free">자유 기술 칸 사용</option></select></div>
+    <div class="row"><label>Limitation</label>
+      <label class="ck"><input type="checkbox" id="lim1"> AP projection (AP 고르면 자동)</label></div>
+    <div class="row"><label>비교</label><input type="text" id="comp" list="pl-comp" placeholder="예: Compared with previous chest PA (비우면 안 씀)"></div>
+    <div class="row"><label class="ck"><input type="checkbox" id="apct"> Refer to APCT for upper abdominal findings.</label></div>
+    <div class="row" id="freeRow" hidden><textarea id="freeF" class="s" placeholder="Findings 자유 기술"></textarea></div>
+  </div>
+
+  <h2>결론 항목</h2>
+  <div class="row chips"><label>위치 넣기</label>
+    <button type="button" data-ins="right upper lung zone">RULZ</button><button type="button" data-ins="right middle lung zone">RMLZ</button><button type="button" data-ins="right lower lung zone">RLLZ</button>
+    <button type="button" data-ins="left upper lung zone">LULZ</button><button type="button" data-ins="left middle lung zone">LMLZ</button><button type="button" data-ins="left lower lung zone">LLLZ</button>
+    <button type="button" data-ins="both lungs">both lungs</button><button type="button" data-ins="perihilar area">perihilar</button><button type="button" data-ins="bibasilar area">bibasilar</button>
+    <button type="button" data-ins="CP angle">CP angle</button><button type="button" data-ins="paratracheal area">paratracheal</button></div>
+  <div id="its"></div>
+  <button onclick="addIt('',true)">+ 빈 항목</button>
+
+  <div class="card" style="margin-top:12px">
+    <div class="sub" style="margin-bottom:4px">정상 문구 (항목 뒤에 붙음)</div>
+    <div id="norms"></div>
+  </div>
+
+  <div class="card">
+    <div class="row"><label>Rec</label><input type="text" id="rec" list="pl-rec" placeholder="선택 (예: Chest CT follow-up)"></div>
+    <div class="row"><label>Comment</label><input type="text" id="comment" list="pl-comment" placeholder="선택"></div>
+  </div>
+
+  <details class="card" id="xtra">
+    <summary>기타 줄 (불러오기에서 해석하지 못한 줄, 그대로 출력)</summary>
+    <label>Findings</label><textarea id="extraF" class="s"></textarea>
+  </details>
+</section>
+<section>
+  <div class="card" style="position:sticky;top:8px">
+    <h2 style="margin-top:0">상용구</h2>
+    <div class="row"><input type="text" id="q" placeholder="검색 (예: PE, 림프종, GGN, nodule, 결핵)"></div>
+    <div id="lib"></div>
+  </div>
+  <h2>Report</h2>
+  <textarea id="out" spellcheck="false"></textarea>
+  <div class="row"><button class="p" onclick="copyOut()">복사</button><button onclick="Store.reset()">초기화</button><span id="msg" class="sub"></span></div>
+</section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+
+const VIEW_HEAD={"PA":"<CHEST PA>","AP":"<CHEST AP>","PA & LAT":"<CHEST PA & LAT>","DECUBITUS":"<CHEST DECUBITUS>"};
+const LIM1="Limitation d/t AP projection.";
+const APCT="* Refer to APCT for upper abdominal findings.";
+const NORMALS=["No active lung lesion.","No significant enlarged lymph nodes at mediastinum.","No definite evidence of acute pulmonary embolism.","Mild atherosclerotic change of thoracic aorta."];
+$("norms").innerHTML=NORMALS.map((n,i)=>`<label class="ck" style="display:flex"><input type="checkbox" data-n="${i}"${i===0?" checked":""}> ${esc(n)}</label>`).join("");
+
+/* ---------- 상용구 라이브러리 (판독장.xlsx Sheet2 + 상용구 메모의 Chest PA 예시, 환자 정보 제외) ----------
+   g: 분류, t: 제목, tip: 판독 팁(판독문에 안 들어감), l: 넣을 줄(첫 줄이 항목, 나머지는 하위 줄) */
+window.CH_LIB=[
+ {g:"Normal",t:"No active lung lesion",l:["No active lung lesion."]},
+ {g:"Lung",t:"Pulmonary emphysema",l:["Pulmonary emphysema."]},
+ {g:"Lung",t:"Emphysema (centrilobular/paraseptal)",l:["Mild centrilobular and paraseptal pul. emphysema at BUL."]},
+ {g:"Lung",t:"Interstitial lung disease",l:["Reticulation at bibasilar area, suspicious interstitial lung disease."]},
+ {g:"Lung",t:"Traction BE / fibrosis",l:["Traction BE / fibrosis in BLL."]},
+ {g:"Lung",t:"Residual pneumonia",l:["Increased opacity at both mid to lower lung zones, possibility of residual pneumonia."]},
+ {g:"Lung",t:"Pneumonia",l:[": pneumonia"]},
+ {g:"Lung",t:"Pneumonia aggravation",l:["Aggravation of perihilar consolidation at right, suggestive of aggravation of pneumonia."]},
+ {g:"Lung",t:"Focal opacity: pneumonia or TB",l:["Focal increased opacity in RUL, suspicious pneumonia or pul. TB."]},
+ {g:"Lung",t:"Round atelectasis",l:["No interval change of mass-like opacity at paramedian right lower lung zone, possible round atelectasis."]},
+ {g:"Lung",t:"Improved edema / effusion (AP)",l:["Improved diffuse mild increased opacity, both lungs.",":probable improved pul edema/pleural effusion in bilateral."]},
+ {g:"Mass / CT 권고",t:"Mass-like opacity → chest CT",tip:"Scoliosis 때문에 chest가 틀어진 것처럼 보여도 RULZ 쪽에 mass를 의심할 만한 opacity가 있으면 chest CT를 권고.",l:["Suspicious mass like opacity in the right upper lung zone and right paratracheal area.","    → Rec) Pre and postcontrast chest CT."]},
+ {g:"Mass / CT 권고",t:"Clavicle·rib과 겹친 RUL mass",hint:true,tip:"RUL에서 clavicle, rib과 겹쳐 보여 놓치기 쉬운 mass (cavity 동반 가능) → chest CT를 권고하고 F/U. 놓치면 큰일 나는 위치."},
+ {g:"Heart / Vessel",t:"Cardiomegaly",l:["Cardiomegaly."]},
+ {g:"Heart / Vessel",t:"Atherosclerotic aorta",l:["Mild atherosclerotic change of thoracic aorta."]},
+ {g:"Heart / Vessel",t:"No acute PE",l:["No definite evidence of acute pulmonary embolism."]},
+ {g:"Mediastinum",t:"No enlarged LN",l:["No significant enlarged lymph nodes at mediastinum."]},
+ {g:"Mediastinum",t:"Esophageal dilatation",l:["Diffuse dilatation and fluid retention at the thoracic esophagus."]},
+ {g:"Pleura",t:"Decubitus: no free fluid",tip:"pleural effusion이 없는 decubitus.",l:["No free-fluid shifting at right decubitus view."]},
+ {g:"Bone",t:"Rotoscoliosis",l:["Rotoscoliosis of the thoracic spine."]},
+ {g:"Upper abdomen",t:"Refer to APCT",l:["* Refer to APCT for upper abdominal findings."]}
+];
+
+function renderLib(){
+  const q=$("q").value.trim().toLowerCase();
+  const KO={"림프":"lymph","림프종":"lymphoma","결핵":"tb","폐암":"cancer","암":"cancer","전이":"metasta","결절":"nodule","폐렴":"pneumonia","색전":"embol","대동맥":"aort","흉수":"effusion","기흉":"pneumothorax","골절":"fracture","외상":"trauma","간":"liver","식도":"esophag","흉선":"thym","기관지":"bronch","폐기종":"emphysema","섬유화":"fibrosis","부종":"edema","팁":"팁"};
+  const qq=KO[q]||q;
+  const groups={};
+  CH_LIB.forEach((p,i)=>{
+    const hay=(p.g+" "+p.t+" "+(p.l||[]).join(" ")+" "+(p.tip||"")).toLowerCase();
+    if(q&&!hay.includes(q)&&!hay.includes(qq))return;
+    (groups[p.g]=groups[p.g]||[]).push([p,i]);
+  });
+  $("lib").innerHTML=Object.entries(groups).map(([g,ps])=>`<details${q?" open":""}><summary>${esc(g)} <span class="sub">(${ps.length})</span></summary>`+
+    ps.map(([p,i])=>`<div class="ph${p.hint?" hint":""}" ${p.hint?"":`data-p="${i}" title="클릭하면 결론 항목으로 추가"`}><span class="t">${p.hint?"💡 ":"＋ "}${esc(p.t)}</span><span class="l">${esc((p.l||[]).join("\n"))}${p.tip?`<span class="tip">💡 ${esc(p.tip)}</span>`:""}</span></div>`).join("")+`</details>`).join("")||`<p class="sub">찾는 상용구가 없어요.</p>`;
+}
+$("q").addEventListener("input",renderLib);
+$("lib").addEventListener("click",e=>{const el=e.target.closest("[data-p]");if(!el)return;const p=CH_LIB[+el.dataset.p];addIt(p.l.join("\n"));});
+renderLib();
+
+/* ---------- 결론 항목 카드 ---------- */
+let lastTa=null;
+function addIt(text,focus){
+  const d=document.createElement("div");d.className="card it";d.dataset.chg="";d.dataset.base=text||"";
+  d.innerHTML=`<div class="row"><span class="k" data-o="no"></span>
+    <button type="button" class="sm chg-u" data-a="u">변화 없음</button><button type="button" class="sm chg-i" data-a="i">증가</button><button type="button" class="sm chg-d" data-a="d">감소</button><button type="button" class="sm chg-n" data-a="n">새로</button><button type="button" class="sm" data-a="o">원래대로</button>
+    <button type="button" class="sm" data-a="up" title="위로">↑</button><button type="button" class="sm" data-a="dn" title="아래로">↓</button>
+    <button type="button" class="x sm" data-a="del">삭제</button></div>
+    <div class="prev" data-o="prev"></div>
+    <textarea data-k="txt" class="s" spellcheck="false" placeholder="첫 줄이 결론 항목, 다음 줄부터 하위 줄 (-->, : , DDx 등)"></textarea>`;
+  d.querySelector("textarea").value=text||"";
+  $("its").appendChild(d);fit(d.querySelector("textarea"));upd();
+  if(focus)d.querySelector("textarea").focus();
+  return d;
+}
+const fit=t=>{t.style.height="auto";t.style.height=Math.max(44,t.scrollHeight+2)+"px"};
+// F/U 문장: 첫 줄 앞부분만 바꿈
+const PRE=/^(?:no (?:significant |interval )?change (?:in (?:size|extent) )?of |(?:slight |mild )?(?:interval )?(?:increase|decrease)d? in (?:size|extent)(?: and number)? of |newly (?:appeared|developed) |new )/i;
+const low=s=>/^[A-Z]{2,}|^[A-Z][a-z]*[A-Z]|^\d/.test(s)?s:s[0].toLowerCase()+s.slice(1);
+function chgText(base,a){
+  const L=base.split("\n"),m=(L[0]||"").replace(/^\s*\d+\.\s*/,"");
+  const core=m.replace(PRE,""),c=core?low(core):core;
+  L[0]=a==="o"?m:{u:"No change of ",i:"Increase in size of ",d:"Decrease in size of ",n:"Newly appeared "}[a]+c;
+  return L.join("\n");
+}
+$("its").addEventListener("click",e=>{
+  const b=e.target.closest("button[data-a]");if(!b)return;
+  const c=b.closest(".it"),ta=c.querySelector("textarea"),a=b.dataset.a;
+  if(a==="del"){c.remove();upd();return}
+  if(a==="up"&&c.previousElementSibling){c.parentNode.insertBefore(c,c.previousElementSibling);upd();return}
+  if(a==="dn"&&c.nextElementSibling){c.parentNode.insertBefore(c.nextElementSibling,c);upd();return}
+  if("uidno".includes(a)){ta.value=chgText(c.dataset.base||ta.value,a);c.dataset.chg=a==="o"?"":a;fit(ta);upd()}
+});
+$("its").addEventListener("focusin",e=>{if(e.target.matches("textarea"))lastTa=e.target});
+$("its").addEventListener("input",e=>{if(e.target.matches("textarea")){fit(e.target);const c=e.target.closest(".it");if(!c.dataset.chg)c.dataset.base=e.target.value}});
+// 위치 넣기: 마지막으로 고치던 칸의 커서 자리에
+document.querySelector(".chips").addEventListener("click",e=>{
+  const b=e.target.closest("[data-ins]");if(!b)return;
+  const t=lastTa&&document.body.contains(lastTa)?lastTa:(document.querySelector("#its textarea:last-of-type")||null);
+  if(!t){addIt(b.dataset.ins,true);return}
+  const s=t.selectionStart??t.value.length,en=t.selectionEnd??s,ins=b.dataset.ins;
+  t.value=t.value.slice(0,s)+ins+t.value.slice(en);t.focus();t.selectionStart=t.selectionEnd=s+ins.length;
+  t.dispatchEvent(new Event("input",{bubbles:true}));
+});
+
+/* ---------- 판독문 만들기 ---------- */
+function items(){return[...document.querySelectorAll(".it textarea")].map(t=>t.value.replace(/\s+$/,"")).filter(x=>x.trim())}
+let lastView="PA";
+function upd(){
+  // AP 를 고르면 AP projection limitation 을 자동으로 켬 (직접 끌 수 있음)
+  if($("view").value!==lastView){if($("view").value==="AP")$("lim1").checked=true;else if(lastView==="AP")$("lim1").checked=false;lastView=$("view").value}
+  $("freeRow").hidden=$("fmode").value!=="free";
+  const its=items();
+  document.querySelectorAll(".it").forEach((c,i)=>c.querySelector("[data-o=no]").textContent=(i+1)+".");
+  const norms=[...document.querySelectorAll("#norms input:checked")].map(x=>NORMALS[+x.dataset.n]);
+  const top=[];
+  if($("lim1").checked)top.push(LIM1);
+  if($("comp").value.trim())top.push($("comp").value.trim());
+  const xf=$("extraF").value.split("\n").map(s=>s.replace(/\s+$/,"")).filter(s=>s.trim());
+  // 결론: 항목 번호 + 하위 줄, 그 뒤 정상 문구
+  const all=[...its,...norms];
+  const concl=all.length>1?all.map((t,i)=>{const L=t.split("\n");return`${i+1}. ${L[0].trim()}`+(L.length>1?"\n"+L.slice(1).join("\n"):"")}).join("\n"):(all[0]||"");
+  const fm=$("fmode").value;
+  const findings=fm==="free"?$("freeF").value.trim():fm==="same"?all.join("\n"):"";
+  const F=[findings,...xf].filter(Boolean).join("\n");
+  const rec=$("rec").value.trim(),cm=$("comment").value.trim();
+  const head=$("head").value==="auto"?VIEW_HEAD[$("view").value]:"";
+  $("out").value=[
+    head,top.join("\n"),
+    F?"Findings :\n"+F:"",
+    "====== [Conclusion] ======\n"+(head?head+"\n":"")+"Conclusion :\n"+concl,
+    $("apct").checked?APCT:"",
+    rec?"Rec) "+rec:"",
+    cm?"Comment : "+cm:""
+  ].filter(Boolean).join("\n\n").replace(/^\n+/,"");
+}
+
+/* ---------- 기존 판독문 불러오기 ---------- */
+const nk=s=>s.toLowerCase().replace(/[^a-z0-9]/g,"");
+const SUB=/^\s*(?:-{1,3}>?|→|>|:|;|\.{2,3}|d\/?dx|ddx|r\/o\)|rec\)|with\b|\(.*\)\s*$)/i;
+function showPrev(c,label,text){const p=c.querySelector("[data-o=prev]");const b=document.createElement("b"),d=document.createElement("div");b.textContent=label+" ";d.append(b,text);p.appendChild(d)}
+function importReport(){
+  const t=$("src").value.replace(/\r/g,"").trim();
+  if(!t){$("impmsg").textContent="붙여넣은 내용이 없어요";return}
+  if(document.querySelector(".it")&&!confirm("현재 결론 항목을 지우고 불러올까요?"))return;
+  const fresh=window.Voice&&Voice.fresh();
+  $("its").innerHTML="";document.querySelectorAll("#norms input").forEach(x=>x.checked=false);
+  ["lim1","apct"].forEach(id=>$(id).checked=false);["comp","rec","comment","freeF","extraF"].forEach(id=>$(id).value="");
+  // 촬영 방향은 머리말(<CHEST AP> 등)에서
+  const hv=t.match(/<\s*CHEST\s+(PA\s*&\s*LAT|PA|AP|DECUBITUS)\s*>/i);
+  if(hv){$("view").value=hv[1].toUpperCase().replace(/\s*&\s*/," & ");lastView=$("view").value}
+  const m=t.match(/={2,}\s*\[?\s*(?:Conclusion|결\s*론)\s*\]?\s*={2,}/i);
+  const parts=m?[t.slice(0,m.index),t.slice(m.index+m[0].length)]:[t,""];
+  const keep=[];   // 항목 후보 줄 [part, line]
+  parts.forEach((part,pi)=>part.split("\n").forEach(raw=>{
+    let s=raw.replace(/\s+$/,"");const k=s.trim();if(!k)return;
+    if(/^<.*>$/.test(k))return;
+    if(/^limitation d\/t ap projection/i.test(k)){$("lim1").checked=true;return}
+    if(/refer to apct/i.test(k)){$("apct").checked=true;return}
+    if(/^(?:ROF|Compared with)\b/i.test(k)){$("comp").value=k;return}
+    let mm=k.match(/^(?:Rec\)|REC\)|Recommendation\s*:?)\s*(.*)$/i);if(mm&&!/^\s/.test(s)){$("rec").value=mm[1].trim();return}
+    mm=k.match(/^Comment\s*:\s*(.*)$/i);if(mm){$("comment").value=mm[1].trim();return}
+    if(/^(?:Findings?|Conclusion|결\s*론)\s*:?\s*$/i.test(k))return;
+    s=s.replace(/^\s*(?:Findings?|Conclusion)\s*:\s*/i,"");
+    const ni=NORMALS.findIndex(n=>nk(s.replace(/^\s*\d+\.\s*/,""))===nk(n));
+    if(ni>=0){document.querySelector(`#norms [data-n="${ni}"]`).checked=true;return}
+    keep.push([pi,s]);
+  }));
+  // 결론 쪽에 항목이 있으면 결론으로 카드를 만들고, Findings 쪽 줄은 자유 기술로
+  const concl=keep.filter(x=>x[0]===1),find=keep.filter(x=>x[0]===0);
+  const src=concl.length?concl:find;
+  if(concl.length&&find.length&&!fresh){$("freeF").value=find.map(x=>x[1]).join("\n");$("fmode").value="free"}
+  // 번호 줄/하위 줄 묶기
+  const blocks=[];
+  for(const[,s] of src){
+    const num=/^\s*\d+\.\s*/.test(s);
+    if(num||!blocks.length||!(SUB.test(s)||/^\s{2,}/.test(s)))blocks.push([s.replace(/^\s*\d+\.\s*/,"")]);
+    else blocks[blocks.length-1].push(s);
+  }
+  blocks.forEach(b=>{const c=addIt(b.join("\n"));if(!fresh)showPrev(c,"이전:",b.join("\n"))});
+  upd();
+  $("impmsg").textContent=`결론 항목 ${blocks.length}개를 불러왔어요.${fresh?"":" 카드의 변화 없음/증가/감소/새로 버튼으로 F/U 문장을 만드세요."} 결과를 꼭 확인하세요.`;
+}
+function clearSrc(){$("src").value="";$("impmsg").textContent="";$("src").focus()}
+function copyOut(){
+  const t=$("out");t.select();
+  (navigator.clipboard?navigator.clipboard.writeText(t.value):Promise.reject()).catch(()=>document.execCommand("copy"));
+  $("msg").textContent="복사됨";setTimeout(()=>$("msg").textContent="",1500);
+}
+const skip=e=>e.target.id==="out"||e.target.id==="q"||(e.target.closest&&e.target.closest("#store,#impbox,#lib"));
+document.addEventListener("input",e=>{if(skip(e))return;upd()});
+document.addEventListener("change",e=>{if(skip(e))return;upd()});
+upd();
+
+Voice.attach({module:"cxr"});
+Report.attach({module:"chest-xr"});
+Store.init({module:"chest-xr",out:"out",fields:{comp:"비교",rec:"Rec",comment:"Comment"},
+  onUse:body=>{$("src").value=body;$("impbox").open=true;importReport()}});
+</script>
+</body>
+</html>

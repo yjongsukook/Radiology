@@ -17,7 +17,7 @@
 | Ultrasound | 근골격계 초음파 | 준비 중 |
 | Ultrasound | 상복부 초음파 (liver, GB, pancreas, spleen) | 사용 가능 |
 | Mammography | Mammography (BI-RADS) | 사용 가능 |
-| X-ray | 흉부 X-ray | 준비 중 |
+| X-ray | 흉부 X-ray (상용구 라이브러리) | 사용 가능 |
 | CT | 흉부 CT (상용구 라이브러리) | 사용 가능 |
 | CT | 복부 CT | 준비 중 |
 | MRI | MRI | 준비 중 |
