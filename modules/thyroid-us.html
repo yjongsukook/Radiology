@@ -35,6 +35,10 @@ button.p{background:var(--acc);border-color:var(--acc);color:#fff}
 .it:not([data-reg=custom]) .g-regtxt{display:none}
 .it:not([data-kind=ln]) .g-lvl{display:none}
 .it:not([data-chg=i]):not([data-chg=d]) .g-prev{display:none}
+/* 오른쪽 칸(Report)은 스크롤을 따라 내려옴. 좁은 화면(한 줄 배치)에서는 그대로 */
+main>section:last-child{position:sticky;top:8px;align-self:start;height:calc(100vh - 16px);display:flex;flex-direction:column;overflow:auto}
+main>section:last-child #out{flex:1 1 auto;min-height:260px}
+@media(max-width:900px){main>section:last-child{position:static;height:auto;overflow:visible}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js"></script>
 <script src="../lib/db.js"></script>

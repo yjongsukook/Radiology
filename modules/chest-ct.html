@@ -34,7 +34,7 @@ button.sm{padding:2px 8px;font-size:12px}
 .it textarea{min-height:44px}
 .it[data-chg=u] .chg-u,.it[data-chg=i] .chg-i,.it[data-chg=d] .chg-d,.it[data-chg=n] .chg-n{background:var(--acc);border-color:var(--acc);color:#fff}
 /* 상용구 라이브러리 */
-#lib{max-height:460px;overflow:auto;padding-right:4px}
+#lib{max-height:38vh;overflow:auto;padding-right:4px}
 #lib details{border-top:1px solid var(--line);padding:4px 0}
 #lib details:first-child{border-top:0}
 .ph{display:flex;gap:8px;align-items:flex-start;padding:5px 4px;border-radius:4px;cursor:pointer}
@@ -44,6 +44,10 @@ button.sm{padding:2px 8px;font-size:12px}
 .ph .tip{display:block;font:12px/1.45 "Pretendard","Noto Sans KR",system-ui,sans-serif;color:var(--tip);margin-top:2px}
 .ph.hint{cursor:default}
 .chips button{padding:2px 8px;font-size:12px}
+/* 오른쪽 칸(Report)은 스크롤을 따라 내려옴. 좁은 화면(한 줄 배치)에서는 그대로 */
+main>section:last-child{position:sticky;top:8px;align-self:start;height:calc(100vh - 16px);display:flex;flex-direction:column;overflow:auto}
+main>section:last-child #out{flex:1 1 auto;min-height:260px}
+@media(max-width:900px){main>section:last-child{position:static;height:auto;overflow:visible}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js"></script>
 <script src="../lib/db.js"></script>
@@ -105,7 +109,7 @@ button.sm{padding:2px 8px;font-size:12px}
   </details>
 </section>
 <section>
-  <div class="card" style="position:sticky;top:8px">
+  <div class="card" style="flex:0 0 auto">
     <h2 style="margin-top:0">상용구</h2>
     <div class="row"><input type="text" id="q" placeholder="검색 (예: PE, 림프종, GGN, nodule, 결핵)"></div>
     <div id="lib"></div>
