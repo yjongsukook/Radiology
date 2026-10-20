@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chest CT 판독문 생성기</title>
+<style>
+:root{--bg:#f5f6f4;--card:#fff;--ink:#1d2421;--mute:#66706b;--line:#d5dbd7;--acc:#1f6f5c;--warn:#a8452a;--tip:#7a5b12}
+@media(prefers-color-scheme:dark){:root{--bg:#161a18;--card:#202623;--ink:#e6ebe8;--mute:#93a09a;--line:#34403b;--acc:#58b9a0;--warn:#e08a6c;--tip:#e0c27a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 "Pretendard","Noto Sans KR",system-ui,sans-serif}
+main{max-width:1250px;margin:0 auto;padding:16px;display:grid;grid-template-columns:1.15fr .85fr;gap:16px}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+h1{font-size:18px;margin:0 0 4px}h2{font-size:14px;margin:14px 0 6px}
+.sub{color:var(--mute);font-size:12px;margin:0 0 8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:10px;margin-bottom:10px}
+summary{cursor:pointer;font-weight:600}
+.row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:4px 0}
+label{font-size:12px;color:var(--mute)}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:4px 6px;max-width:100%}
+input[type=text]{flex:1;min-width:140px}
+textarea.s{width:100%;min-height:64px;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace}
+.ck{display:inline-flex;gap:4px;align-items:center;color:var(--ink);font-size:13px}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:4px;padding:5px 10px}
+button.p{background:var(--acc);border-color:var(--acc);color:#fff}
+button.sm{padding:2px 8px;font-size:12px}
+:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.k{font-weight:600;color:var(--acc)}
+#out{width:100%;min-height:520px;font:13px/1.55 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap}
+.x{margin-left:auto;color:var(--warn)}
+.prev{font-size:12px;color:var(--mute);background:var(--bg);border-left:3px solid var(--acc);border-radius:3px;padding:4px 8px;margin:6px 0;white-space:pre-wrap}
+.prev:empty{display:none}
+.prev b{color:var(--ink);font-weight:600}
+.it textarea{min-height:44px}
+.it[data-chg=u] .chg-u,.it[data-chg=i] .chg-i,.it[data-chg=d] .chg-d,.it[data-chg=n] .chg-n{background:var(--acc);border-color:var(--acc);color:#fff}
+/* 상용구 라이브러리 */
+#lib{max-height:460px;overflow:auto;padding-right:4px}
+#lib details{border-top:1px solid var(--line);padding:4px 0}
+#lib details:first-child{border-top:0}
+.ph{display:flex;gap:8px;align-items:flex-start;padding:5px 4px;border-radius:4px;cursor:pointer}
+.ph:hover{background:var(--bg)}
+.ph .t{font-size:12px;font-weight:600;min-width:150px;max-width:180px;color:var(--acc)}
+.ph .l{font:12px/1.45 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;flex:1}
+.ph .tip{display:block;font:12px/1.45 "Pretendard","Noto Sans KR",system-ui,sans-serif;color:var(--tip);margin-top:2px}
+.ph.hint{cursor:default}
+.chips button{padding:2px 8px;font-size:12px}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js"></script>
+<script src="../lib/db.js"></script>
+<script src="../lib/store.js"></script>
+<script src="../lib/learn.js"></script>
+<script src="../lib/voice.js"></script>
+<script src="../lib/report.js"></script>
+</head>
+<body>
+<main>
+<section>
+  <h1>Chest CT 판독문 생성기</h1>
+  <p class="sub">상용구를 골라 결론 항목을 만들고, 카드에서 바로 고치세요. 환자 정보는 입력하지 마세요. 문구는 직접 검수해서 사용하세요.</p>
+
+  <details class="card" id="impbox" open>
+    <summary>기존 판독문 불러오기 (F/U용)</summary>
+    <p class="sub">이전 report를 붙여넣고 불러오기를 누르면 번호 항목(하위 줄 포함)이 카드로 바뀌어요. 카드의 변화 없음/증가/감소/새로 버튼으로 F/U 문장으로 바꿀 수 있어요.</p>
+    <textarea id="src" class="s" style="min-height:120px" placeholder="기존 report 붙여넣기"></textarea>
+    <div class="row"><button class="p" onclick="importReport()">불러오기</button><button onclick="clearSrc()">지우기</button><span id="impmsg" class="sub"></span></div>
+  </details>
+
+  <details class="card" id="store"></details>
+
+  <div class="card">
+    <div class="row"><label>머리말</label><select id="head"><option selected>&lt;CHEST CT&gt;</option><option value="">(없음)</option></select>
+      <label>Findings 칸</label><select id="fmode"><option value="none">쓰지 않음 (Conclusion만)</option><option value="same">결론 항목을 그대로</option><option value="free">자유 기술 칸 사용</option></select></div>
+    <div class="row"><label>Protocol</label><select id="proto"></select></div>
+    <div class="row" id="peRow" hidden><label>PE quality</label><select id="peq"><option>Good</option><option>Suboptimal</option><option>Poor</option></select><span class="sub" style="margin:0">Good 기준: central vein HU 300 이상</span></div>
+    <div class="row"><label>Limitation</label>
+      <label class="ck"><input type="checkbox" id="lim1"> severe motion artifact and insufficient inspiration</label>
+      <label class="ck"><input type="checkbox" id="lim2"> noncontrast study</label></div>
+    <div class="row"><label>비교</label><input type="text" id="comp" list="pl-comp" placeholder="예: ROF pre/postcontrast chest CT (비우면 안 씀)"></div>
+    <div class="row"><label class="ck"><input type="checkbox" id="apct"> Refer to APCT about upper abdominal findings.</label></div>
+    <div class="row" id="freeRow" hidden><textarea id="freeF" class="s" placeholder="Findings 자유 기술"></textarea></div>
+  </div>
+
+  <h2>결론 항목</h2>
+  <div class="row chips"><label>위치 넣기</label>
+    <button type="button" data-ins="RUL">RUL</button><button type="button" data-ins="RML">RML</button><button type="button" data-ins="RLL">RLL</button>
+    <button type="button" data-ins="LUL">LUL</button><button type="button" data-ins="LLL">LLL</button><button type="button" data-ins="lingular segment of LUL">lingular</button>
+    <button type="button" data-ins="BUL">BUL</button><button type="button" data-ins="BLL">BLL</button><button type="button" data-ins="both lungs">both lungs</button>
+    <button type="button" data-ins="mediastinum">mediastinum</button><button type="button" data-ins="(#)">(#)</button></div>
+  <div id="its"></div>
+  <button onclick="addIt('',true)">+ 빈 항목</button>
+
+  <div class="card" style="margin-top:12px">
+    <div class="sub" style="margin-bottom:4px">정상 문구 (항목 뒤에 붙음)</div>
+    <div id="norms"></div>
+  </div>
+
+  <div class="card">
+    <div class="row"><label>Rec</label><input type="text" id="rec" list="pl-rec" placeholder="선택 (예: Chest CT follow-up)"></div>
+    <div class="row"><label>Comment</label><input type="text" id="comment" list="pl-comment" placeholder="선택"></div>
+  </div>
+
+  <details class="card" id="xtra">
+    <summary>기타 줄 (불러오기에서 해석하지 못한 줄, 그대로 출력)</summary>
+    <label>Findings</label><textarea id="extraF" class="s"></textarea>
+  </details>
+</section>
+<section>
+  <div class="card" style="position:sticky;top:8px">
+    <h2 style="margin-top:0">상용구</h2>
+    <div class="row"><input type="text" id="q" placeholder="검색 (예: PE, 림프종, GGN, nodule, 결핵)"></div>
+    <div id="lib"></div>
+  </div>
+  <h2>Report</h2>
+  <textarea id="out" spellcheck="false"></textarea>
+  <div class="row"><button class="p" onclick="copyOut()">복사</button><button onclick="Store.reset()">초기화</button><span id="msg" class="sub"></span></div>
+</section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+
+const PROTOS=["CT scans were obtained with pre and postcontrast chest CT scan protocol.","CT scans were obtained with postcontrast chest CT scan protocol.","CT scans were obtained with LDCT scan protocol.","CT scans were obtained with trauma chest CT scan protocol.","CT scans were obtained with pulmonary artery thromboembolism study protocol."];
+const LIM1="Limitation d/t severe motion artifact and insufficient inspiration.",LIM2="Limitation d/t noncontrast study.";
+const APCT="* Refer to APCT about upper abdominal findings.";
+const NORMALS=["No diagnostic abnormal findings in both lungs and mediastinum.","No significantly enlarged lymph node in the mediastinum and both hila.","No evidence of metastasis in the thorax.","No evidence of acute traumatic injury in the thorax.","No evidence of hematoma nor organ injury in thorax.","No evidence of local recurrence at lobectomy stump nor significant lymphadenopathy in the mediastinum.","No definite evidence of acute pulmonary embolism."];
+$("proto").innerHTML=PROTOS.map((p,i)=>`<option value="${i}">${esc(p.replace("CT scans were obtained with ","").replace(" protocol.",""))}</option>`).join("");
+$("norms").innerHTML=NORMALS.map((n,i)=>`<label class="ck" style="display:flex"><input type="checkbox" data-n="${i}"${i===0?" checked":""}> ${esc(n)}</label>`).join("");
+
+/* ---------- 상용구 라이브러리 (판독장.xlsx + 상용구 메모에서, 환자 정보 제외) ----------
+   g: 분류, t: 제목, tip: 판독 팁(판독문에 안 들어감), l: 넣을 줄(첫 줄이 항목, 나머지는 하위 줄) */
+window.CH_LIB=[
+ {g:"Lymph node",t:"SCF LN metastasis",tip:"단경 1cm 이상 / necrosis 동반 시. Meta나 유의미하게 커진 LN이 있으면 별거 아닌 LN은 언급하지 않음. SCF·IMN node는 subcentimeter라도 pathologic 가능성이 있어 언급.",l:["Enlarged lymph nodes at left supraclavicular fossa, probable metastatic lymph nodes."]},
+ {g:"Lymph node",t:"Lymphoma",l:["Multiple enlarged lymph nodes in both lower neck/SCF/axilla/mediastinum/hilar and interlobar area, Rt anterior cardiophrenic angle."," : probable lymphoma involvement"]},
+ {g:"Lymph node",t:"LN metastasis (subcarina 등)",l:["Increased lymph nodes at the subcarina, paraesophageal, bilateral interlobar area, possible lymph node metastasis."]},
+ {g:"Lymph node",t:"Old granulomatous disease",l:["Several tiny to small calcified nodules at both lungs. Subcentimeter/borderline high density/calcified lymph nodes at mediastinum and both hilum. Mild pleural thickening with calcification at right upper hemithorax.",": Probable old granulomatous disease."]},
+ {g:"Lymph node",t:"No significant LN",l:["No significant enlarged lymph nodes at mediastinum."]},
+
+ {g:"Lung cancer / Mass",t:"Lung cancer with LN meta",l:["About 3.8cm sized mass at LLL with conglomerated enlarged lymph nodes at the left interlobar area.","    → Probable lung cancer with lymph node metastasis."]},
+ {g:"Lung cancer / Mass",t:"Huge lung mass",l:["Huge (greater than 9cm) heterogenous enhanced mass involving RUL/RML.","    with obliteration of RUL/RML lobar bronchus."]},
+ {g:"Lung cancer / Mass",t:"Lung cancer aggravation + bone meta",tip:"PET을 꼭 참고.",l:["Increase in size of bx. confirmed lung cancer in RUL and multiple pleuropulmonary masses and nodules in the right hemithorax.","    .. Suspicious invasion of the right 3rd rib, posterior arc.","    → Probable aggravation of lung cancer with pleuropulmonary metastasis.","Probable mass forming bone metastasis at the right 6th rib and probable osteolytic bone metastasis in the left 8th, 11th rib, left scapula."]},
+ {g:"Lung cancer / Mass",t:"Central lung cancer / mediastinal tumor",tip:"둘 다 생각해 볼 수 있는 case.",l:["About 7.2cm heterogenous enhanced mass with necrotic portion at Rt paratrachea/RUL paramedian.","    With suspicious left main bronchus invasion and abuttment/compression of left pulmonary artery.",": probable central lung cancer with conglomerated LN metastasis DDx) mediastinal tumor (thymic carcinoma, mediastinal sarcoma) with lung invasion."]},
+ {g:"Lung cancer / Mass",t:"Central lung cancer + pneumonitis",l:["About 4.6cm sized heterogenous enhanced cavitary mass with necrotic portion in paramedian area of LUL.","    With suspicious left main bronchus invasion and abuttment/compression of left pulmonary artery.","    With consolidation/GGO/segmental atelectasis in LUL.","-> Probable central lung cancer with conglomerated LN metastasis combined post-obstructive pneumonitis."," REC) Tissue confirm."]},
+ {g:"Lung cancer / Mass",t:"Lung cancer with atelectasis",tip:"mass가 7cm 이상으로 커 보여도 실제로는 cancer + atelectasis일 수 있어 T stage를 과대평가하지 않도록 주의.",l:["About 3.1cm heterogenous enhancing mass in basal segment of left lower lobe."]},
+ {g:"Lung cancer / Mass",t:"Lung cancer with SVC syndrome",l:["About 9.5cm sized heterogenous enhancing mass in paramedian right upper lobe and conglomerated LNs at right mediastinum.","-- Probable lung cancer with conglomerated metastatic lymph nodes. DDx) Pulmonary/LN metastasis from HCC.","--invasion and tumor thrombus, severe narrowing at SVC"]},
+ {g:"Lung cancer / Mass",t:"R/O lung cancer vs organizing pneumonia",l:["No significant change, about 2.6cm sized nodule in RUL, anterior segment."," > R/O lung cancer (T1c) or organizing pneumonia/benign neoplasm."]},
+ {g:"Lung cancer / Mass",t:"Persistent cavitary mass",tip:"잘 낫지 않는 pneumonia + cavitary lesion 또는 mass like consolidation → cancer를 의심.",l:["A persistent large cavitary mass at the left upper lobe.","... With bulging fissure sign and suspicious bronchopleural fistula/pleural thickening.","    → Probable chronic infectious process with bronchopleural fistula with chronic pulmonary aspergillosis.","    - DDx. cavitary lung cancer with pleural invasion, granulomatosis polyangiitis (Wegener's granulomatosis).","Rec) Tissue confirmation."]},
+ {g:"Lung cancer / Mass",t:"Pneumonic type lung cancer",l:["Mass like consolidation with ground glass attenuation at posterior segment of RUL and RLL.","    → Possible pneumonia vs. pneumonic type lung cancer such as mucinous adenocarcinoma."]},
+ {g:"Lung cancer / Mass",t:"Endobronchial aggravation + malignant effusion",tip:"cancer가 aggravation되며 right airway를 침범해 central portion 평가가 어려울 때: pleuropulmonary meta와 effusion을 함께 언급.",l:["Aggravation of pleuropulmonary metastases and increased amount of malignant effusion at right hemithorax.","... With aggravation of endobronchial tumor component/obstruction at Rt airway.","... With mild wall thickening at mid thoracic esophagus."]},
+ {g:"Metastasis",t:"Pleuropulmonary metastases",l:["Innumerable small variable size subpleural/parenchymal nodules at both lungs.","--> Probable pleuropulmonary metastases."]},
+ {g:"Metastasis",t:"Innumerable metastases + effusion",l:["Innumerable small variable size subpleural/parenchymal nodules at both lungs.","With scanty amount of bilateral pleural effusion.","--> Probable pleuropulmonary metastases."]},
+ {g:"Metastasis",t:"Hematolymphangitic metastases (miliary)",l:["Aggravation of hematolymphangitic metastases in both lungs."]},
+ {g:"Metastasis",t:"Lymphangitic carcinomatosis",tip:"septa가 bead처럼 보이기도 함.",l:["Interlobular septal wall thickening, probable lymphangitic carcinomatosis. DDx) pulmonary edema."]},
+ {g:"Metastasis",t:"Early hematogenous metastases",tip:"뚜렷한 meta라고 하기엔 애매한 tiny nodule이 여러 개일 때.",l:["Multiple tiny nodules at both lungs (arrows), suspicious early findings of hematogeneous pulmonary metastases."," DDx. post-inflammatory granulomas"]},
+ {g:"Metastasis",t:"Tumor embolism",tip:"pulmonary vein을 침범한 경우도.",l:["Increase in extent of pulmonary embolism at subsegmental pulmonary artery of RLL (#), probable tumor embolism.","Increased lymph nodes at the subcarina, paraesophageal, bilateral interlobar area, possible lymph node metastasis.","    --- with invasion of left inferior pulmonary vein and 3cm extent tumor thrombus."]},
+ {g:"Metastasis",t:"Pleural meta + tumor thrombus (thymic carcinoma)",l:["Newly appeared a 2.3cm pericardial mass, possible metastasis.","Increased size of the pleural/subpleural masses at the left hemithorax, probable aggravation of pleural metastasis.","Newly appeared small amount of pleural and subpulmonic pleural effusion at right, probable malignant pleural effusion.","Newly appeared about 2cm sized necrotic nodule, adjacent to the left brachiocephalic vein (Srs 4, Img 27).","    → Possibility of tumor thrombus.","    - DDx. adjacent lymph nodes at the left prevascular area"]},
+
+ {g:"Nodule / GGN",t:"Benign tiny nodule",l:["A tiny ill-defined nodule in anterior segment of right upper lobe (#), favor benign."]},
+ {g:"Nodule / GGN",t:"Calcified nodule",tip:"nonspecific nodule과 달리 calcified nodule은 benign을 시사하는 소견이므로 명시.",l:["A small calcified nodule in apical segment of LUL, suggestive of benign."]},
+ {g:"Nodule / GGN",t:"Acute infectious nodule",tip:"nodule 주변으로 subtle하게 haziness가 있는 것처럼 보일 때.",l:["Two ill-defined nodules at RUL (Img #, #), probable acute infectious nodule."]},
+ {g:"Nodule / GGN",t:"Inflammatory nodule",l:["Tiny ill-defined nodules in superior segment of right lower lobe (#), probable inflammatory or postinflammatory nodules."]},
+ {g:"Nodule / GGN",t:"Ill-defined nodule DDx metastasis",l:["Newly appeared tiny ill-defined nodule at RML (#) and RLL (#).",": transient inflammatory nodule DDx) metastasis"]},
+ {g:"Nodule / GGN",t:"Mucoid impaction vs metastasis",tip:"기존 bronchiectasis 자리에 생긴 nodule이면 mucoid impaction이나 peripheral atelectasis와 meta를 감별.",l:["Newly appeared tiny nodule in LUL (#), possible mucoid impaction DDx) pulmonary metastasis."]},
+ {g:"Nodule / GGN",t:"Peripheral atelectasis",l:["A small subpleural nodule in lingular segment of LUL (#), probable peripheral atelectasis."]},
+ {g:"Nodule / GGN",t:"New solid nodule, F/U",l:["Newly appeared a 7mm sized solid nodule in RML (#), possible mucoid impacted nodule. DDx) T1 lung cancer.","    -- Rec) sputum study, F/U 3 to 6 months later"]},
+ {g:"Nodule / GGN",t:"Nonspecific GGN (AAH)",l:["GGO lesion in RUL (#), suspicious atypical adenomatous hyperplasia (AAH). DDx) focal fibrosis."]},
+ {g:"Nodule / GGN",t:"GGN 처음 보일 때",l:["A small GGN (#) in right upper lobe."," > R/O transient inflammatory nodule.","    D/Dx) focal fibrosis or atypical adenomatous hyperplasia (AAH)."]},
+ {g:"Nodule / GGN",t:"GGN (AAH/AIS)",tip:"경계가 잘 안 그려지는 GGO는 focal fibrosis, 경계가 잘 그려지는 GGN은 AAH/AIS 가능성. Solid portion이 있으면 MIA도 고려.",l:["A small GGN in RUL (#), suspicious atypical adenomatous hyperplasia/adenocarcinoma in situ (AAH/AIS). DDx) focal fibrosis."]},
+ {g:"Nodule / GGN",t:"Subsolid nodule (AIS/MIA)",l:["No significant change in size of semisolid nodule (predominant GGO, solid portion: 0.8cm) in periphery of LLL superior segment (maximum size: 3.9X2.2cm on coronal #).",": Probable adenocarcinoma in situ/minimal invasive adenocarcinoma (AIS/MIA). DDx) Focal fibrosis."]},
+ {g:"Nodule / GGN",t:"Hamartoma (benign nodule)",tip:"enhance가 잘 안 되고 경계가 좋은 nodule.",l:["A 1.4cm sized well defined nodule in the lingular division of the left upper lobe.","    → Possibility of benign nodule such as hamartoma.","    - DDx. T1 lung cancer."]},
+ {g:"Nodule / GGN",t:"Bronchial atresia / mucoid impaction",tip:"mass처럼 보이는데 enhance가 잘 안 되면 mucoid impaction / bronchial atresia를 생각.",l:["Nonenhanced branching low density nodular lesion in lingular segment of LUL (#) and LLL (#).","--with probable air trapping at the area.",": probable mucoid impacted nodule or bronchial atresia."]},
+ {g:"Nodule / GGN",t:"Infectious nodule (tuberculoma/aspergilloma)",tip:"air crescent가 보이면 aspergilloma를 시사하지만, 없다고 배제할 수는 없음.",l:["Slight increase in size (and disappeared internal cavity) in lateral basal segment of the RLL (#), with adjacent nodular clustering and focal bronchiectasis in the area.","--> Probable infectious nodule including tuberculoma, aspergilloma, cryptococcoma. DDx) vasculitis, cavitary lung cancer."]},
+ {g:"Nodule / GGN",t:"Endometriosis (hemoptysis)",tip:"주기적·지속적 hemoptysis, filled cavitary lesion, nodule 주변 GGO.",l:["No significant change of about 1.6cm sized focal nodular consolidation with filled internal cavities in the posterior segment of RUL.","with minimal perilesional GGO",": suspicious endometriosis with pul. hemorrhage. DDx) Focal BE with mucoid impaction, tuberculoma, aspergilloma, vasculitis"]},
+ {g:"Nodule / GGN",t:"Septic nodules",l:["Multiple necrotic nodules at BLL and cavitary nodules in LUL and RML.",": probable acute infectious nodules (septic pneumonia). DDx) pulmonary metastases"]},
+ {g:"Nodule / GGN",t:"Necrotic nodules (abscess)",l:["About 2.2cm sized necrotic nodule (#) in RUL and 2.4cm sized necrotic nodule (#) in LLL. About 1.0cm sized subpleural nodule in RLL.","-- probable acute infectious nodule (lung abscess) DDx) tuberculosis, lung cancer."]},
+
+ {g:"Infection / Pneumonia",t:"Aspiration pneumonia",l:["Segmental consolidation in posterior segment of right upper lobe. Peribronchial consolidation/GGO with centrilobular/subpleural nodules in RML and BLL.","... With endobronchial secretion / mucous at right lower lobe",": probable (aspiration) pneumonia."]},
+ {g:"Infection / Pneumonia",t:"Mild GGO/consolidation or atelectasis",l:["Probable mild GGO/consolidation or atelectasis at posterior segment of RUL and dependent area of BLL."]},
+ {g:"Infection / Pneumonia",t:"Dependent GGO: edema vs pneumonia",tip:"pneumonia처럼 보이지만 명확한 consolidation 없이 GGO가 dependent에 깔리면 pul. edema 또는 dependent atelectasis.",l:["Mild GGO in dependent RLL.","--> Possibility of mild pul. edema or dependent opacity. DDx) mild (aspiration) pneumonia."]},
+ {g:"Infection / Pneumonia",t:"Dependent atelectasis ± mild pneumonia",l:["Subpleural atelectasis at BLL with subtle low density lesion at RLL, presumed mucoid impaction."," > probable, dependent atelectasis with/without combined mild pneumonia."]},
+ {g:"Infection / Pneumonia",t:"Mild pneumonia vs small airway disease",tip:"애매한 GGO + bronchial wall thickening이 매우 mild할 때.",l:["Mild diffuse bronchial wall thickening at both lungs and mild peribronchial ground glass opacity at right upper lobe and right lower lobe, suspicious acute exacerbation of small airway disease.","    - DDx. mild pneumonia."]},
+ {g:"Infection / Pneumonia",t:"Necrotizing pneumonia",tip:"consolidation 내부로 음영이 감소된 소견이 보이면 necrosis를 의심.",l:["Consolidation with suspicious necrosis in posterior segment of RUL and lobar consolidation in BLL.",": Probable (aspiration and necrotizing) pneumonia."]},
+ {g:"Infection / Pneumonia",t:"Necrotizing pneumonia (new)",l:["Newly developed necrotic consolidation with ground-glass attenuation in the right upper lobe and ill-defined tiny nodules / ground-glass attenuation in both lungs (arrows).","    → Probable necrotizing pneumonia"]},
+ {g:"Infection / Pneumonia",t:"Necrotizing pneumonia r/o necrotic cancer",l:["Slight increase in extent of consolidation at lateral aspect of RUL and superior segment of RLL, extension of pneumonia.","-- slight decrease in extent of necrotic portion and residual cavity of masslike consolidation (presumed lung abscess) in RUL.","    Rec) Follow-up to r/o necrotic lung cancer"]},
+ {g:"Infection / Pneumonia",t:"Necrotizing pneumonia DDx active TB",tip:"active TB도 가능성 있음. prominent bronchial / internal thoracic artery 동반.",l:["Newly appeared consolidation and cavities/necrosis in RUL and bronchial thickening/enhancement, narrowing at right upper lobar bronchus.","-- Possibility of necrotizing pneumonia (lung abscess) DDx) active TB and endobronchial involvement.","Severe hypertrophy at right bronchial artery, right intercostal and right internal thoracic artery."]},
+ {g:"Infection / Pneumonia",t:"Superimposed pneumonia (BE)",l:["Newly developed consolidation in the left lower lobe and lingular division of the left upper lobe.","    .. with underlying bronchiectasis in the area.","    → Superimposed pneumonia, most likely."]},
+ {g:"Infection / Pneumonia",t:"CPR related lung injury",l:["Near-lobar consolidation in Lt lung and GGO at posterior segment of RUL and superior segment of right lower lobe, probable acute pneumonia. DDx) concurrent CPR related lung injury","Acute fracture of anterior arc of right 3-5th and left 4th ribs. Fracture at sternal body and associated retrosternal hematoma."]},
+ {g:"Infection / Pneumonia",t:"Chronic infectious lesion",l:["Slightly decreased in size of a nodule in RUL (#).","No significant change in extent of consolidation with conglomerated multiple nodules in superior segment of RLL. No change of nodular consolidations in lateral basal segment of LLL.","    : Probable chronic infectious lesion such as organized pneumonia, paragonimiasis infection, tuberculous or non-tuberculous mycobacterial disease. D/Dx) unusual manifestation of pul. sarcoidosis, r/o) slowly growing tumorous condition, less likely."]},
+ {g:"Infection / Pneumonia",t:"Severe emphysema with infection",tip:"enhancing 여부로 판단. cancer보다는 infection을 시사.",l:["Several small nodular lesions with little enhancement in the right upper lobe and right lower lobe (arrows on Srs 9).","    → mucoid impaction / pneumonic consolidation, more-likely."]},
+ {g:"Infection / Pneumonia",t:"COVID-19",l:["Multifocal patchy peribronchial and subpleural consolidation/ground glass opacity and interlobular septal thickening at both lungs, suggestive of COVID-19 pneumonia."]},
+ {g:"Infection / Pneumonia",t:"Wax and wane GGO (inflammatory)",tip:"지저분한 GGO/consolidation → inflammatory/infectious.",l:["Wax and wane state of the GGO and consolidations at the remaining lungs.","    → Probable combined inflammatory/infectious process."]},
+ {g:"Infection / Pneumonia",t:"Drug intoxication (aspiration)",l:["Multifocal patchy GGO/consolidation at LUL and BLL. Secretion in the tracheobronchial tree, most severe at superior segment bronchus of LLL.",": Probable (aspiration) pneumonia.","Diffuse wall thickening/edematous change at esophagus."]},
+ {g:"Infection / Pneumonia",t:"Radiation pneumonitis",tip:"RT 이후 생긴 GGO/consolidation: fibrosis가 되려면 시간이 필요하므로 pneumonitis로 쓸지 fibrosis로 쓸지 선택.",l:["New appearance of consolidation with ground-glass attenuation in the paramedian right upper lobe, RML, and right lower lobe.","    → Possible radiation pneumonitis."]},
+ {g:"Infection / Pneumonia",t:"Early radiation pneumonitis",l:["Newly appeared patchy GGOs and ill-defined nodules at RUL and lingular division of LUL.","    → Possibility of early onset radiation pneumonitis. - DDx) acute pneumonia."]},
+ {g:"Infection / Pneumonia",t:"Post radiation fibrosis",l:["Consolidation/fibrotic change at apical segment of LUL.",": probable post-radiotherapy fibrosis."]},
+
+ {g:"TB / NTM",t:"Active pulmonary TB",tip:"NTM은 비교적 중년 이상의 여성에 흔함. galaxy sign / tree-in-bud sign, 위치는 upper lobe.",l:["Galaxy sign at the posterior segment of the right upper lobe.","    → Probable active pulmonary tuberculosis.","    - DDx. nonspecific infectious bronchiolitis."]},
+ {g:"TB / NTM",t:"TB/NTM aggravation",l:["Progressed multifocal traction BE and bronchial wall thickening."]},
+ {g:"TB / NTM",t:"Cavity aggravation",l:["Increase in extent of cavities in RUL and newly appeared cavities in RUL and LUL."]},
+ {g:"TB / NTM",t:"TB sequelae",l:["Fibrocalcific change with traction bronchiectasis and mild volume loss in BULs, probable TBc sequelae.","    Dense calcified pleural plaque with extrapleural fat proliferation in left lower hemithorax, probable sequelae of TBc pleurisy."]},
+ {g:"TB / NTM",t:"TB sequelae + cicatricial emphysema",l:["Fibrocalcific TB sequelae with cicatricial emphysema in the both upper lobes."]},
+ {g:"TB / NTM",t:"TB destroyed lung",tip:"subpleural fat이 두꺼워져 있음. destroyed lung에 생기는 pneumonia로 dyspnea가 심할 수 있음.",l:["Severe bronchiectasis with peribronchial inflammation, consolidation.","Bronchopleural fistula."]},
+ {g:"TB / NTM",t:"Infectious bronchiolitis (NTM)",tip:"centrilobular nodules + BE + mucoid impaction → infectious/inflammatory bronchiolitis. TB, NTM을 DDx.",l:["Mild centrilobular nodules with mucoid impaction in BLLs.","   -- with bronchiectasis/bronchiolectasis/volume decrease in RML and lingular segment of LUL. Bronchiectasis in anterior basal segment of LLL.","   --> Probable infectious/inflammatory bronchiolitis. DDx) TB, NTM infection."]},
+ {g:"TB / NTM",t:"Clustered centrilobular nodules (NTM)",l:["Multifocal clustered centrilobular / ill-defined nodules with endobronchial mucoid impaction in both lungs."," -- With bronchiectasis/bronchiolectasis and volume decrease."," --> Probable infectious/inflammatory bronchiolitis. DDx) NTM infection."]},
+ {g:"TB / NTM",t:"NTM progression + new nodule",tip:"NTM에 맞는 bronchiectasis/bronchiolectasis + nodule.",l:["Increase in extent of multiple centrilobular tiny to small nodules in RML.","   Centrilobular tiny to small nodules with peribronchial GGO and mild bronchiectasis in inferior lingular segment of LUL.","     : Probable mild progression bronchitis and mild bronchopneumonia DDx) NTM."]},
+ {g:"TB / NTM",t:"Diffuse panbronchiolitis",l:["Diffuse bronchiectasis/bronchiolectasis with clustered centrilobular nodules at both lungs.","    → Possibility of diffuse panbronchiolitis.","    - DDx) smoking related lung disease, chronic hypersensitivity pneumonitis"]},
+
+ {g:"ILD / Fibrosis",t:"UIP",l:["Reticulation, interlobular septal thickening, and GGO in subpleural area of BLL.","No change in extent of traction bronchiectasis and reticular opacities in both subpleural lungs, suggestive of ILD (UIP)."]},
+ {g:"ILD / Fibrosis",t:"NSIP",tip:"subpleural GGO/reticulation. UIP에 비해 septal thickening이 심하지 않고 dependent portion에 주로 위치.",l:["Subpleural GGO/reticulation at BLL.","    : possibility of interstitial lung disease such as fibrotic NSIP or fibrotic COP."]},
+ {g:"ILD / Fibrosis",t:"ILA",tip:"명확한 ILD 외에 reticulation이 보이고 stacked air cyst 등이 보이면 ILA로 언급. 나중에 ILA가 될 수 있다는 점을 언급하면 됨.",l:["Subpleural reticulation at right lung, possibility of interstitial lung abnormality (ILA)."]},
+ {g:"ILD / Fibrosis",t:"ILA vs UIP (cysts)",l:["Reticulation in BLL, with layered cystic lesions in BLL (more severe in RLL).","    : possibility of interstitial lung abnormality (ILA)    D/Dx) interstitial lung disease of UIP pattern."]},
+ {g:"ILD / Fibrosis",t:"Dependent atelectasis vs ILD",tip:"dependent atelectasis가 헷갈릴 때.",l:["Subpleural GGO / reticulation at BLL, probable dependent atelectasis in the underlying pulmonary emphysema - DDx. interstitial lung disease (UIP)"]},
+ {g:"ILD / Fibrosis",t:"Post-inflammatory fibrosis",tip:"reticulation은 ILD·fibrotic change를 시사하고 대개 acute infectious보다 chronic. acute infectious를 말하고 싶으면 consolidation/GGO로 표현.",l:["Minimal subpleural reticulation and cysts at right middle lobe and right lower lobe, probable post-inflammatory fibrosis and paraseptal emphysema."]},
+ {g:"ILD / Fibrosis",t:"Pneumoconiosis",l:["Innumerable tiny to small calcified/noncalcified nodules in both lungs, especially upper and middle lung zones.","--> Probable pneumoconiosis, PMF (progressive massive fibrosis)."]},
+ {g:"ILD / Fibrosis",t:"Pneumoconiosis progression",l:["Increase in size and number of small to tiny nodules at both lungs with perilymphatic distribution.","    → pneumoconiosis, more-likely.","    - DDx. combined metastatic nodules cannot be excluded."]},
+ {g:"ILD / Fibrosis",t:"Interstitial pulmonary edema",l:["Diffuse mild GGO and interlobular septal thickening in both lungs, probable interstitial pulmonary edema."]},
+ {g:"ILD / Fibrosis",t:"Interstitial edema DDx pneumonia",l:["Diffuse intra/interlobular septal thickening in both lower lung."," : probable interstitial pulmonary edema - DDx. interstitial pneumonia (atypical pneumonia)"]},
+ {g:"ILD / Fibrosis",t:"Pulmonary edema",l:["Mild interlobular septal thickening at both lungs, suggestive of pulmonary edema."]},
+ {g:"ILD / Fibrosis",t:"Mosaic attenuation (motion)",l:["Mild mosaic attenuation at both lungs.","    → Pseudolesion d/t motion artifact - DDx. small vessel or small airway disease."]},
+ {g:"ILD / Fibrosis",t:"Mosaic attenuation (inspiration)",l:["Mild mosaic attenuation at both lungs.","    → Pseudolesion d/t insufficient inspiration. - DDx. small vessel or small airway disease."]},
+ {g:"ILD / Fibrosis",t:"Mosaic attenuation (small airway)",l:["Mild mosaic attenuation in both lungs, suspicious small-vessel or small-airway disease."]},
+ {g:"ILD / Fibrosis",t:"Mosaic + linear opacity (HP)",l:["Mild diffuse mosaic attenuation with linear opacity in both lungs.","    : Possibly d/t insufficient inspiration and subsegmental atelectasis. - DDx) fibrotic hypersensitivity pneumonitis (HP)."]},
+ {g:"ILD / Fibrosis",t:"Mosaic, air trapping (expiration)",l:["Mild mosaic attenuation at both lungs","... With mild elevation of bilateral diaphragm","    ; probable partial air trapping due to expiration chest"]},
+
+ {g:"Emphysema / Cyst",t:"Emphysema",l:["Mild centrilobular and paraseptal pul. emphysema at BUL."]},
+ {g:"Emphysema / Cyst",t:"Emphysematous cysts (BHD)",tip:"multiple air cystic lesion. 단, emphysema가 아니라 emphysematous cyst로 보일 때.",l:["Several air cystic lesions in both lungs, probable emphysematous cysts.","    - DDx. cystic lung disease such as Birt-Hogg-Dube (BHD) syndrome"]},
+ {g:"Emphysema / Cyst",t:"Scattered air cysts (LCH/LIP)",l:["No change of scattered multiple air cystic lesion in both lungs, with upper lung zone predominance.","-- r/o LCH (langerhans cell histiocytosis).","-- r/o LIP (lymphocytic interstitial pneumonia)."]},
+ {g:"Emphysema / Cyst",t:"CPAM",tip:"cystic lesion만 몇 개 보일 때.",l:["No change of multiseptated cystic lesion at the right lower lobe, probable congenital pulmonary airway malformations (CPAM)."]},
+
+ {g:"Airway",t:"Secretion",l:["Secretion in the tracheobronchial tree."]},
+ {g:"Airway",t:"Tenacious secretion at carina",l:["Tenacious secretion at carina."]},
+ {g:"Airway",t:"Endotracheal lesion (mucus)",tip:"endotracheal lesion이 보일 때: 감별은 많지만 대부분 secretion.",l:["A 0.9cm sized nodular lesion at the anterior wall of the trachea at the level of thoracic inlet.","    → Tenacious mucus, more-likely. - DDx) tracheal tumor such as papilloma.","    Rec) Chest CT follow-up or bronchoscopic evaluation"]},
+ {g:"Airway",t:"Cardiac bronchus vs diverticulum",l:["No change of air-containing lesion in the subcarina area, suspicious cardiac bronchus. DDx) esophageal diverticulum."]},
+ {g:"Airway",t:"Paratracheal air cyst",l:["Small air density at the right retrotracheal area.","    → Paratracheal air cyst vs. small cervical esophageal diverticulum"]},
+
+ {g:"Pleura",t:"Pleural effusion, scanty",l:["Scanty amount of pleural effusion in bilateral."]},
+ {g:"Pleura",t:"Effusion + passive atelectasis",l:["Moderate bilateral pleural effusion with passive atelectasis at RML/BLL."]},
+ {g:"Pleura",t:"Passive atelectasis",l:["With probable mild passive atelectasis at RLL."]},
+ {g:"Pleura",t:"Calcified pleural plaque",l:["Mild calcified pleural plaque at right."]},
+ {g:"Pleura",t:"Chronic empyema",l:["Small amount of pleural effusion with pleural thickening/calcification at Rt, probable chronic empyema.","... With adhesive atelectasis at the adjacent RLL."]},
+ {g:"Pleura",t:"Loculated effusion (empyema)",l:["Multiple loculated pleural effusion in left hemithorax.","-- Possible pleural empyema such as TB empyema. DDx) TB pleurisy, malignant effusion"]},
+
+ {g:"Vascular / Heart",t:"Acute pulmonary embolism",l:["Contrast filling defects in segmental/subsegmental pulmonary arteries of RML and left lung."," > Probable acute pulmonary embolism."," -- With (improved) RV enlargement."]},
+ {g:"Vascular / Heart",t:"Acute PE, no RV enlargement",l:["Contrast filling defects in segmental/subsegmental pulmonary arteries of RML and left lung."," > Probable acute pulmonary embolism.","    ; No evidence of RV enlargement"]},
+ {g:"Vascular / Heart",t:"New multifocal PE with RV enlargement",l:["Newly appeared multifocal pulmonary embolism involving Lt lobar/segmental pulmonary arteries and segmental pulmonary artery of right lower lobe.","... With mild right ventricular enlargement"]},
+ {g:"Vascular / Heart",t:"PE + pulmonary infarction",l:["Pulmonary embolism at segmental pulmonary arteries of RML and BLL.","Subpleural consolidation with internal ground glass opacity (reversed halo sign) at BLL, suggestive of pulmonary infarction."]},
+ {g:"Vascular / Heart",t:"Chronic pulmonary embolism",l:["Small amount linear filling defect/decreased caliber of segmental pulmonary arteries of BLL."," ; possibility of chronic pulmonary embolism"]},
+ {g:"Vascular / Heart",t:"No acute PE",l:["No definite evidence of acute pulmonary embolism."]},
+ {g:"Vascular / Heart",t:"PE artifact",tip:"motion artifact와 true embolism이 헷갈릴 때.",l:["Several low density lesions at subsegmental pulmonary arteries at BLL.","    → Artifact, more likely than true pul. embolism."]},
+ {g:"Vascular / Heart",t:"Pulmonary hypertension",l:["Mild dilatation of central pulmonary trunk, suggestive of pulmonary artery hypertension."]},
+ {g:"Vascular / Heart",t:"Cardiomegaly + PAH",l:["Cardiomegaly with RA, RV enlargement and mild dilatation of central pulmonary trunk, probable pulmonary artery hypertension."]},
+ {g:"Vascular / Heart",t:"Ascending aorta dilatation",tip:"AAA 기준 3cm, ascending aorta dilatation 기준 4cm (5cm까지는 지켜봄).",l:["Mild ascending aorta dilatation, 40mm, with atherosclerotic wall calcifications."]},
+ {g:"Vascular / Heart",t:"AAA (thrombosed)",l:["Mild thrombosed aneurysm at distal abdominal aorta (AAA, maximum diameter ; 3.9cm)"]},
+ {g:"Vascular / Heart",t:"Aortic aneurysm",l:["Aneurysmal dilatation/internal low attenuation (maximal diameter : 5.0cm)"]},
+ {g:"Vascular / Heart",t:"Aortic dissection",l:["Acute aortic dissection with intramural hematoma, Stanford A, DeBakey I.","-- Aortic root ~ covered abdominal aorta on CT.","-- true lumen branches off celiac trunk, SMA, IMA, and both renal arteries."]},
+ {g:"Vascular / Heart",t:"Ulcerative plaque",l:["Ulcerative plaque in the thoracoabdominal aorta with high risk of distal embolism."]},
+ {g:"Vascular / Heart",t:"Atheroma (arch/descending)",l:["Atheroma in the aortic arch and proximal/distal descending thoracic aorta with high risk of distal embolism."]},
+ {g:"Vascular / Heart",t:"Severe ulcerative plaque / thrombus",l:["Severe ulcerative plaque or in situ thrombus in the aortic arch and descending thoracic aorta, represent high-risk of distal embolism."]},
+ {g:"Vascular / Heart",t:"Atherosclerotic change",l:["Mild atherosclerotic change of thoracic aorta."]},
+ {g:"Vascular / Heart",t:"Coronary calcification",l:["Mild coronary calcification."]},
+ {g:"Vascular / Heart",t:"Coronary + aortic valve calcification",l:["Mild calcification at coronary artery and aortic valve."]},
+ {g:"Vascular / Heart",t:"Old MI",l:["Subendocardial fat at LV apex, suggestive of old myocardial infarction."]},
+ {g:"Vascular / Heart",t:"Contrast pooling (heart failure)",l:["Contrast pooling at the dependent portion of Rt body, probable combined heart failure."]},
+ {g:"Vascular / Heart",t:"Bronchial artery hypertrophy",l:["Hypertrophy at left bronchial artery and Lt inferior phrenic artery."]},
+ {g:"Vascular / Heart",t:"Collateral vessels (venous occlusion)",l:["Abundant collateral vessel formation at both chest wall and mediastinum, suggestive of chronic venous occlusion of the IJV."]},
+
+ {g:"Mediastinum / Esophagus",t:"Thymic tissue (hyperplasia)",l:["Triangular shaped, fibrofatty lesion in the anterior mediastinum."," > possible, thymic hyperplasia."]},
+ {g:"Mediastinum / Esophagus",t:"Subinvoluted thymic tissue",l:["Triangular shaped, fibrofatty lesion in the anterior mediastinum, possible subinvoluted thymic tissue - DDx. thymic hyperplasia."]},
+ {g:"Mediastinum / Esophagus",t:"Thymic cyst / low grade TET",l:["No change, about 1.5cm sized nodule at anterior mediastinum, possibility of thymic cyst or low grade thymic epithelial tumor."]},
+ {g:"Mediastinum / Esophagus",t:"Thymic / pericardial cyst",l:["Ovoid low attenuated lesion at right anterior mediastinum (#), probable benign cystic lesion such as thymic cyst or pericardial cyst."]},
+ {g:"Mediastinum / Esophagus",t:"Pericardial recess",l:["A small hypodense lesion around right inferior pulmonary vein.","    → Probable pericardial recess."]},
+ {g:"Mediastinum / Esophagus",t:"Esophageal varix",l:["Esophageal wall thickening at lower esophagus, possibility of esophageal and paraesophageal varix.","Rec) EGD"]},
+ {g:"Mediastinum / Esophagus",t:"Hiatal hernia",l:["R/O esophageal hiatal hernia (Srs 4. Img #)","   -- Rec) EGD correlation."]},
+ {g:"Mediastinum / Esophagus",t:"Esophageal dilatation + hernia",l:["Esophageal dilatation with fluid retention and suspicious esophageal hiatal hernia (Srs 5. Img #)","   -- Rec) EGD correlation."]},
+ {g:"Mediastinum / Esophagus",t:"Esophageal fluid retention",l:["Fluid retention along esophagus."]},
+
+ {g:"Trauma / Bone / Chest wall",t:"Multiple rib fractures (MRF)",tip:"trauma 환자에서 fracture 소견이 애매하면 retrosternal hematoma / rib hematoma / swelling이 clue.",l:["Fracture of left clavicle, left scapula, left 1-10th ribs, left TP of T2, T6 with chest wall hematoma in left.","Mild GGO/consolidation in posterior basal segment of LLL.","    --> Probable mild pul. contusion","Small hemopneumothorax in the left."]},
+ {g:"Trauma / Bone / Chest wall",t:"Lung contusion / laceration",l:["Focal consolidation/GGO in posterior segment of RUL with small traumatic pneumatocele (#), probable lung contusion/laceration.","--with scanty amount extrapleural emphysema and subcutaneous emphysema at Rt upper posterior hemithorax.","Acute fracture in posterior arc of Rt. 4,5th ribs."]},
+ {g:"Trauma / Bone / Chest wall",t:"Mild contusion GGO",l:["Mild subpleural ground glass opacity in BLL, possible lung contusion."]},
+ {g:"Trauma / Bone / Chest wall",t:"Healed rib fracture",tip:"rib margin이 irregular.",l:["Healed fracture at anterior arc of left 7-9th ribs."]},
+ {g:"Trauma / Bone / Chest wall",t:"Elastofibroma dorsi",l:["A 4.5cm sized soft tissue mass in the right posterior chest wall, inferior to the right scapula.","    → Possibility of elastofibroma dorsi"]},
+ {g:"Trauma / Bone / Chest wall",t:"Degenerative vs AS/DISH",l:["Vertebral body squaring and interspinous ligament ossification.",": suspicious degenerative change. - DDx. ankylosing spondylitis (AS), Diffuse idiopathic skeletal hyperostosis (DISH)."]},
+ {g:"Trauma / Bone / Chest wall",t:"Ankylosing spondylitis",l:["Vertebral body squaring and interspinous ligament ossification. Flowing osteophyte along the anterior aspect of continuous T-vertebrae.",": suspicious ankylosing spondylitis (AS). DDx) Diffuse idiopathic skeletal hyperostosis (DISH)."]},
+ {g:"Trauma / Bone / Chest wall",t:"Sternal fracture 판단 팁",hint:true,tip:"recon에 따라 artifact로 fracture처럼 보일 수 있음 (Srs 8, 9에서 위치가 다르면 artifact). 실제 fracture는 반듯하게 transverse로 부서지기보다 대각선으로 쪼개짐. transverse면 항상 의심."},
+
+ {g:"Device / Post-op",t:"Chemoport",l:["S/P chemoport insertion via Rt IJV with tip in RA."]},
+ {g:"Device / Post-op",t:"Endotracheal intubation",l:["S/P endotracheal intubation with "]},
+ {g:"Device / Post-op",t:"Breast implant",l:["S/P breast implant insertion, bilateral."]},
+
+ {g:"Upper abdomen",t:"No liver mass (noncontrast)",l:["No abnormal mass in the liver.","... Limitation d/t noncontrast study."]},
+ {g:"Upper abdomen",t:"Arterial enhancing lesion",l:["Arterial enhancing lesion in both hemilivers.","  : AP shunt or hemangioma"]},
+ {g:"Upper abdomen",t:"R/O HCC (pre)",l:["Heterogeneous attenuation bulging mass at Lt hepatic lobe, r/o HCC.","    Rec) Dedicated liver CT or MRI."]},
+
+ {g:"Artifact / 기술",t:"Dependent opacity (inspiration)",tip:"ER에서 숨을 제대로 못 참고 찍은 경우 GGO처럼 보이는 것은 실제 병변이 아니라 lung이 상대적으로 collapse되어 보이는 것.",l:["Dependent opacity in , probably due to suboptimal inspiration."]},
+ {g:"판독 팁",t:"LN 언급",hint:true,tip:"Cancer 환자/recur 환자에서 metastasis가 의심되는 소견이 보이거나, 유의미하게 커진 LN이 아니면 언급하지 않음. SCF node / IMN node는 subcentimeter라도 pathologic LN 가능성이 있어 언급."},
+ {g:"판독 팁",t:"LDCT nodule",hint:true,tip:"흡연, 고령, ILD history / emphysema / residual GGO가 있으면 cancer odds ratio가 높으므로 LDCT에서 작은 nodule이라도 cancer 가능성을 염두에 두고 판독."},
+ {g:"판독 팁",t:"우연히 발견된 nodule",hint:true,tip:"benign nodule, well-defined nodule로 생각되면 Lung-RADS 기준에 맞춰 장경+단경/2를 mm 단위로 계산해 기재해도 됨."}
+];
+
+function renderLib(){
+  const q=$("q").value.trim().toLowerCase();
+  const KO={"림프":"lymph","림프종":"lymphoma","결핵":"tb","폐암":"cancer","암":"cancer","전이":"metasta","결절":"nodule","폐렴":"pneumonia","색전":"embol","대동맥":"aort","흉수":"effusion","기흉":"pneumothorax","골절":"fracture","외상":"trauma","간":"liver","식도":"esophag","흉선":"thym","기관지":"bronch","폐기종":"emphysema","섬유화":"fibrosis","부종":"edema","팁":"팁"};
+  const qq=KO[q]||q;
+  const groups={};
+  CH_LIB.forEach((p,i)=>{
+    const hay=(p.g+" "+p.t+" "+(p.l||[]).join(" ")+" "+(p.tip||"")).toLowerCase();
+    if(q&&!hay.includes(q)&&!hay.includes(qq))return;
+    (groups[p.g]=groups[p.g]||[]).push([p,i]);
+  });
+  $("lib").innerHTML=Object.entries(groups).map(([g,ps])=>`<details${q?" open":""}><summary>${esc(g)} <span class="sub">(${ps.length})</span></summary>`+
+    ps.map(([p,i])=>`<div class="ph${p.hint?" hint":""}" ${p.hint?"":`data-p="${i}" title="클릭하면 결론 항목으로 추가"`}><span class="t">${p.hint?"💡 ":"＋ "}${esc(p.t)}</span><span class="l">${esc((p.l||[]).join("\n"))}${p.tip?`<span class="tip">💡 ${esc(p.tip)}</span>`:""}</span></div>`).join("")+`</details>`).join("")||`<p class="sub">찾는 상용구가 없어요.</p>`;
+}
+$("q").addEventListener("input",renderLib);
+$("lib").addEventListener("click",e=>{const el=e.target.closest("[data-p]");if(!el)return;const p=CH_LIB[+el.dataset.p];addIt(p.l.join("\n"));});
+renderLib();
+
+/* ---------- 결론 항목 카드 ---------- */
+let lastTa=null;
+function addIt(text,focus){
+  const d=document.createElement("div");d.className="card it";d.dataset.chg="";d.dataset.base=text||"";
+  d.innerHTML=`<div class="row"><span class="k" data-o="no"></span>
+    <button type="button" class="sm chg-u" data-a="u">변화 없음</button><button type="button" class="sm chg-i" data-a="i">증가</button><button type="button" class="sm chg-d" data-a="d">감소</button><button type="button" class="sm chg-n" data-a="n">새로</button><button type="button" class="sm" data-a="o">원래대로</button>
+    <button type="button" class="sm" data-a="up" title="위로">↑</button><button type="button" class="sm" data-a="dn" title="아래로">↓</button>
+    <button type="button" class="x sm" data-a="del">삭제</button></div>
+    <div class="prev" data-o="prev"></div>
+    <textarea data-k="txt" class="s" spellcheck="false" placeholder="첫 줄이 결론 항목, 다음 줄부터 하위 줄 (-->, : , DDx 등)"></textarea>`;
+  d.querySelector("textarea").value=text||"";
+  $("its").appendChild(d);fit(d.querySelector("textarea"));upd();
+  if(focus)d.querySelector("textarea").focus();
+  return d;
+}
+const fit=t=>{t.style.height="auto";t.style.height=Math.max(44,t.scrollHeight+2)+"px"};
+// F/U 문장: 첫 줄 앞부분만 바꿈
+const PRE=/^(?:no (?:significant |interval )?change (?:in (?:size|extent) )?of |(?:slight |mild )?(?:interval )?(?:increase|decrease)d? in (?:size|extent)(?: and number)? of |newly (?:appeared|developed) |new )/i;
+const low=s=>/^[A-Z]{2,}|^[A-Z][a-z]*[A-Z]|^\d/.test(s)?s:s[0].toLowerCase()+s.slice(1);
+function chgText(base,a){
+  const L=base.split("\n"),m=(L[0]||"").replace(/^\s*\d+\.\s*/,"");
+  const core=m.replace(PRE,""),c=core?low(core):core;
+  L[0]=a==="o"?m:{u:"No change of ",i:"Increase in size of ",d:"Decrease in size of ",n:"Newly appeared "}[a]+c;
+  return L.join("\n");
+}
+$("its").addEventListener("click",e=>{
+  const b=e.target.closest("button[data-a]");if(!b)return;
+  const c=b.closest(".it"),ta=c.querySelector("textarea"),a=b.dataset.a;
+  if(a==="del"){c.remove();upd();return}
+  if(a==="up"&&c.previousElementSibling){c.parentNode.insertBefore(c,c.previousElementSibling);upd();return}
+  if(a==="dn"&&c.nextElementSibling){c.parentNode.insertBefore(c.nextElementSibling,c);upd();return}
+  if("uidno".includes(a)){ta.value=chgText(c.dataset.base||ta.value,a);c.dataset.chg=a==="o"?"":a;fit(ta);upd()}
+});
+$("its").addEventListener("focusin",e=>{if(e.target.matches("textarea"))lastTa=e.target});
+$("its").addEventListener("input",e=>{if(e.target.matches("textarea")){fit(e.target);const c=e.target.closest(".it");if(!c.dataset.chg)c.dataset.base=e.target.value}});
+// 위치 넣기: 마지막으로 고치던 칸의 커서 자리에
+document.querySelector(".chips").addEventListener("click",e=>{
+  const b=e.target.closest("[data-ins]");if(!b)return;
+  const t=lastTa&&document.body.contains(lastTa)?lastTa:(document.querySelector("#its textarea:last-of-type")||null);
+  if(!t){addIt(b.dataset.ins,true);return}
+  const s=t.selectionStart??t.value.length,en=t.selectionEnd??s,ins=b.dataset.ins;
+  t.value=t.value.slice(0,s)+ins+t.value.slice(en);t.focus();t.selectionStart=t.selectionEnd=s+ins.length;
+  t.dispatchEvent(new Event("input",{bubbles:true}));
+});
+
+/* ---------- 판독문 만들기 ---------- */
+function items(){return[...document.querySelectorAll(".it textarea")].map(t=>t.value.replace(/\s+$/,"")).filter(x=>x.trim())}
+function upd(){
+  $("peRow").hidden=$("proto").value!=="4";
+  $("freeRow").hidden=$("fmode").value!=="free";
+  const its=items();
+  document.querySelectorAll(".it").forEach((c,i)=>c.querySelector("[data-o=no]").textContent=(i+1)+".");
+  const norms=[...document.querySelectorAll("#norms input:checked")].map(x=>NORMALS[+x.dataset.n]);
+  const top=[PROTOS[+$("proto").value]];
+  if($("proto").value==="4")top.push(`${$("peq").value} technical quality as far as opacification of the pulmonary arteries is concerned.`);
+  if($("lim1").checked)top.push(LIM1);
+  if($("lim2").checked)top.push(LIM2);
+  if($("comp").value.trim())top.push($("comp").value.trim());
+  const xf=$("extraF").value.split("\n").map(s=>s.replace(/\s+$/,"")).filter(s=>s.trim());
+  // 결론: 항목 번호 + 하위 줄, 그 뒤 정상 문구
+  const all=[...its,...norms];
+  const concl=all.length>1?all.map((t,i)=>{const L=t.split("\n");return`${i+1}. ${L[0].trim()}`+(L.length>1?"\n"+L.slice(1).join("\n"):"")}).join("\n"):(all[0]||"");
+  const fm=$("fmode").value;
+  const findings=fm==="free"?$("freeF").value.trim():fm==="same"?all.join("\n"):"";
+  const F=[findings,...xf].filter(Boolean).join("\n");
+  const rec=$("rec").value.trim(),cm=$("comment").value.trim();
+  const head=$("head").value;
+  $("out").value=[
+    head,top.join("\n"),
+    F?"Findings :\n"+F:"",
+    "====== [Conclusion] ======\n"+(head?head+"\n":"")+"Conclusion :\n"+concl,
+    $("apct").checked?APCT:"",
+    rec?"Rec) "+rec:"",
+    cm?"Comment : "+cm:""
+  ].filter(Boolean).join("\n\n").replace(/^\n+/,"");
+}
+
+/* ---------- 기존 판독문 불러오기 ---------- */
+const nk=s=>s.toLowerCase().replace(/[^a-z0-9]/g,"");
+const SUB=/^\s*(?:-{1,3}>?|→|>|:|;|\.{2,3}|d\/?dx|ddx|r\/o\)|rec\)|with\b|\(.*\)\s*$)/i;
+function showPrev(c,label,text){const p=c.querySelector("[data-o=prev]");const b=document.createElement("b"),d=document.createElement("div");b.textContent=label+" ";d.append(b,text);p.appendChild(d)}
+function importReport(){
+  const t=$("src").value.replace(/\r/g,"").trim();
+  if(!t){$("impmsg").textContent="붙여넣은 내용이 없어요";return}
+  if(document.querySelector(".it")&&!confirm("현재 결론 항목을 지우고 불러올까요?"))return;
+  const fresh=window.Voice&&Voice.fresh();
+  $("its").innerHTML="";document.querySelectorAll("#norms input").forEach(x=>x.checked=false);
+  ["lim1","lim2","apct"].forEach(id=>$(id).checked=false);["comp","rec","comment","freeF","extraF"].forEach(id=>$(id).value="");
+  const m=t.match(/={2,}\s*\[?\s*(?:Conclusion|결\s*론)\s*\]?\s*={2,}/i);
+  const parts=m?[t.slice(0,m.index),t.slice(m.index+m[0].length)]:[t,""];
+  const keep=[];   // 항목 후보 줄 [part, line]
+  parts.forEach((part,pi)=>part.split("\n").forEach(raw=>{
+    let s=raw.replace(/\s+$/,"");const k=s.trim();if(!k)return;
+    if(/^<.*>$/.test(k))return;
+    const pi0=PROTOS.findIndex(p=>nk(k).startsWith(nk(p).slice(0,40)));if(pi0>=0){$("proto").value=String(pi0);return}
+    const q=k.match(/^(Poor|Suboptimal|Good)\s+technical quality/i);if(q){$("peq").value=q[1][0].toUpperCase()+q[1].slice(1).toLowerCase();return}
+    if(/motion artifact and insufficient inspiration/i.test(k)&&/^limitation/i.test(k)){$("lim1").checked=true;return}
+    if(/^\.{0,3}\s*limitation d\/t noncontrast/i.test(k)&&!keep.length){$("lim2").checked=true;return}
+    if(/refer to apct/i.test(k)){$("apct").checked=true;return}
+    if(/^ROF\b/i.test(k)){$("comp").value=k;return}
+    let mm=k.match(/^(?:Rec\)|REC\)|Recommendation\s*:?)\s*(.*)$/i);if(mm&&!/^\s/.test(s)){$("rec").value=mm[1].trim();return}
+    mm=k.match(/^Comment\s*:\s*(.*)$/i);if(mm){$("comment").value=mm[1].trim();return}
+    if(/^(?:Findings?|Conclusion|결\s*론)\s*:?\s*$/i.test(k))return;
+    s=s.replace(/^\s*(?:Findings?|Conclusion)\s*:\s*/i,"");
+    const ni=NORMALS.findIndex(n=>nk(s.replace(/^\s*\d+\.\s*/,""))===nk(n));
+    if(ni>=0){document.querySelector(`#norms [data-n="${ni}"]`).checked=true;return}
+    keep.push([pi,s]);
+  }));
+  // 결론 쪽에 항목이 있으면 결론으로 카드를 만들고, Findings 쪽 줄은 자유 기술로
+  const concl=keep.filter(x=>x[0]===1),find=keep.filter(x=>x[0]===0);
+  const src=concl.length?concl:find;
+  if(concl.length&&find.length&&!fresh){$("freeF").value=find.map(x=>x[1]).join("\n");$("fmode").value="free"}
+  // 번호 줄/하위 줄 묶기
+  const blocks=[];
+  for(const[,s] of src){
+    const num=/^\s*\d+\.\s*/.test(s);
+    if(num||!blocks.length||!(SUB.test(s)||/^\s{2,}/.test(s)))blocks.push([s.replace(/^\s*\d+\.\s*/,"")]);
+    else blocks[blocks.length-1].push(s);
+  }
+  blocks.forEach(b=>{const c=addIt(b.join("\n"));if(!fresh)showPrev(c,"이전:",b.join("\n"))});
+  upd();
+  $("impmsg").textContent=`결론 항목 ${blocks.length}개를 불러왔어요.${fresh?"":" 카드의 변화 없음/증가/감소/새로 버튼으로 F/U 문장을 만드세요."} 결과를 꼭 확인하세요.`;
+}
+function clearSrc(){$("src").value="";$("impmsg").textContent="";$("src").focus()}
+function copyOut(){
+  const t=$("out");t.select();
+  (navigator.clipboard?navigator.clipboard.writeText(t.value):Promise.reject()).catch(()=>document.execCommand("copy"));
+  $("msg").textContent="복사됨";setTimeout(()=>$("msg").textContent="",1500);
+}
+const skip=e=>e.target.id==="out"||e.target.id==="q"||(e.target.closest&&e.target.closest("#store,#impbox,#lib"));
+document.addEventListener("input",e=>{if(skip(e))return;upd()});
+document.addEventListener("change",e=>{if(skip(e))return;upd()});
+upd();
+
+Voice.attach({module:"chest"});
+Report.attach({module:"chest-ct"});
+Store.init({module:"chest-ct",out:"out",fields:{comp:"비교",rec:"Rec",comment:"Comment"},
+  onUse:body=>{$("src").value=body;$("impbox").open=true;importReport()}});
+</script>
+</body>
+</html>
