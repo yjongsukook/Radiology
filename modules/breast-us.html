@@ -54,6 +54,7 @@ main>section:last-child #out{flex:1 1 auto;min-height:260px}
 <script src="../lib/learn.js"></script>
 <script src="../lib/voice.js"></script>
 <script src="../lib/report.js"></script>
+<script src="../lib/ref.js"></script>
 </head>
 <body>
 <main>
@@ -563,6 +564,7 @@ upd();
 
 Voice.attach({module:"breast"});
 Report.attach({module:"breast"});
+Ref.attach({type:"breast"});
 Store.init({module:"breast-us",out:"out",fields:{reason:"Reason",rec:"Rec",comment:"Comment"},
   onUse:body=>{$("src").value=body;$("impbox").open=true;importReport()}});
 </script>

@@ -50,6 +50,7 @@ main>section:last-child #out{flex:1 1 auto;min-height:260px}
 <script src="../lib/learn.js"></script>
 <script src="../lib/voice.js"></script>
 <script src="../lib/report.js"></script>
+<script src="../lib/ref.js"></script>
 </head>
 <body>
 <main>
@@ -474,6 +475,7 @@ upd();
 
 Voice.attach({module:"mammo"});
 Report.attach({module:"mammo"});
+Ref.attach({type:"mammo"});
 Store.init({module:"mammo",out:"out",fields:{rec:"Rec",comment:"Comment"},
   onUse:body=>{$("src").value=body;$("impbox").open=true;importReport()}});
 </script>

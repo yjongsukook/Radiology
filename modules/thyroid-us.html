@@ -46,6 +46,7 @@ main>section:last-child #out{flex:1 1 auto;min-height:260px}
 <script src="../lib/learn.js"></script>
 <script src="../lib/voice.js"></script>
 <script src="../lib/report.js"></script>
+<script src="../lib/ref.js"></script>
 </head>
 <body>
 <main>
@@ -379,6 +380,7 @@ function copyOut(){
 /* ---------- 내 저장소 (lib/store.js) ---------- */
 Voice.attach({module:"thyroid"});
 Report.attach({module:"thyroid"});
+Ref.attach({type:"ktirads"});
 Store.init({module:"thyroid-us",out:"out",fields:{reason:"Reason",comment:"Comment",rec:"Rec"},
   onUse:body=>{$("src").value=body;$("imp").open=true;importReport()}});
 
